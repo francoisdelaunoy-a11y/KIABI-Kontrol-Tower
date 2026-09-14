@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Layers, Target, Leaf, Check, Wallet, TrendingUp, Tag, Boxes, GitBranch, Globe2, Factory, ClipboardList, Sparkles, ShoppingBag, Truck, Send, RotateCcw, X, Heart, Star, ArrowRight, Baby, FileText, Box, BadgeCheck, MessageCircle, Wrench, Scale, Users, Palette, SpellCheck, Network, UserCog, Crown, Mic, Play, Database, Building2, Handshake, Award, ShieldCheck, TrendingDown, LayoutGrid, Triangle } from "lucide-react";
 
 /* ============================================================

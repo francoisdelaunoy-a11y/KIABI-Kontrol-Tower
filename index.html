@@ -26,21 +26,28 @@
     import React from "react";
     import { createRoot } from "react-dom/client";
 
-    const source = await fetch("./App.jsx").then((response) => {
-      if (!response.ok) throw new Error(`Impossible de charger App.jsx (${response.status})`);
-      return response.text();
-    });
-    const compiled = Babel.transform(source, {
-      presets: ["react"],
-      sourceType: "module",
-      filename: "App.jsx"
-    }).code;
-    const moduleUrl = URL.createObjectURL(new Blob([compiled], { type: "text/javascript" }));
-    const { default: App } = await import(moduleUrl);
+    const root = document.getElementById("root");
+    try {
+      const source = await fetch("./App.jsx").then((response) => {
+        if (!response.ok) throw new Error(`Impossible de charger App.jsx (${response.status})`);
+        return response.text();
+      });
+      const compiled = Babel.transform(source, {
+        presets: ["react"],
+        sourceType: "module",
+        filename: "App.jsx"
+      }).code;
+      const moduleUrl = URL.createObjectURL(new Blob([compiled], { type: "text/javascript" }));
+      const { default: App } = await import(moduleUrl);
 
-    createRoot(document.getElementById("root")).render(
-      React.createElement(React.StrictMode, null, React.createElement(App))
-    );
+      createRoot(root).render(
+        React.createElement(React.StrictMode, null, React.createElement(App))
+      );
+    } catch (error) {
+      console.error(error);
+      root.innerHTML = `<pre style="margin:24px;padding:16px;border:1px solid #e05a5a;border-radius:10px;color:#8b1e1e;white-space:pre-wrap;font:13px/1.5 monospace">Le cockpit n’a pas pu démarrer.
+${error?.stack || error}</pre>`;
+    }
   </script>
 </body>
 </html>
