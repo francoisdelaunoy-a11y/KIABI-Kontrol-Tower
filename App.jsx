@@ -117,7 +117,7 @@ const EXPERTS = {
   design: { role: "Business decision-maker", txt: "The product manager secures the key balances of the commercial structure of their offer." },
   assistante: { role: "Business decision-maker", txt: "The assistant product manager ensures the correct listing of the products created by the product manager, through to full entry in the PLM." },
   directrice: { role: "Business decision-maker", txt: "The market manager guarantees the overall balance of the collection built by the product managers." },
-  supply: { role: "Business decision-maker", txt: "The Go to Market lead validates the sourcing scenarios taking the full cost into account." },
+  supply: { role: "Business decision-maker", txt: "The KFI lead validates the sourcing scenarios taking the full cost into account." },
 };
 
 /* ---- Collection data (director scope) ---- */
@@ -789,7 +789,7 @@ function DirectricePage({ st }) {
 
   return (
     <div>
-      <MarketBriefEditor st={st} />
+      <BriefEditor st={st} kindId="market" />
 
       {/* ---- Collection director cockpit ---- */}
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
@@ -949,8 +949,9 @@ function DirectricePage({ st }) {
 const catOf = (n) => { const s = n.toLowerCase(); if (s.includes("bod")) return "Bodysuit"; if (s.includes("pyjama") || s.includes("sleepsuit")) return "Sleepsuit / Pyjamas"; if (s.includes("romper")) return "Romper"; return "Set"; };
 
 /* ============================================================
-   Market brief — written in Market Framework, copied read-only to
-   Collection Framework and Product Manager (local simulation, no network)
+   Briefs — the market brief is written in the Market sub-tab and the
+   collection brief in the Collection sub-tab (same principle); both are
+   copied read-only downstream (local simulation, no network)
    ============================================================ */
 const STYLE3D_NAME = "Style3D"; /* transcribed as "Steel 3D" in the voice brief — most likely Style3D; adjust here if needed */
 const MARKET_SOURCES = [
@@ -970,43 +971,71 @@ const BRIEF_THEMES = [
   { re: /trend|fashion|novelty|capsule|impulse|animation/i, theme: "Fashion animation", guidance: "add impulse picks to reach the 15 – 22 % animation share" },
 ];
 const SAMPLE_MARKET_INTENTION = "For S1 2027 the Baby market must stay the most accessible layette offer on the market: hold the 4 → 15 € price ladder, secure permanent bodysuit packs and nightwear every week of the season, and bring comfort and softness to every essential. We push a low-carbon direction on the biggest volumes with recycled cotton and nearshore sourcing. Colour direction: sage green and ecru as the season signature. Licences remain an impulse animation, not the base. Open the export-eligible Core structures to the South and Maghreb zones.";
+/* Collection level: same principle, sources and themes transposed to the collection structures */
+const COLLECTION_SOURCES = [
+  { id: "market", name: "Market brief", desc: "orientation received from the Market sub-tab", signal: (ctx) => (ctx.marketBrief ? `market brief received: ${ctx.marketBrief.summary.headline}` : "no market brief synthesized yet — write it in the Market sub-tab") },
+  { id: "range", name: "Range plan", desc: "PLM range plan — structures and colourway references", signal: "12 collection structures and 28 colourway references planned; Top tier at 15 % of volume against a 12 % ceiling" },
+  { id: "sellthrough", name: "Sell-through history", desc: "S1 2026 sell-through by collection structure", signal: "permanent bodysuit packs at 92 % sell-through; licensed rompers at 61 %, markdown risk on the Top tier" },
+  { id: "style3d", name: STYLE3D_NAME, desc: "3D prototypes and material library", signal: "3D prototypes validated on 8 structures; velour and pointelle knits ready for sampling" },
+];
+const COLLECTION_THEMES = [
+  { re: /pyramid|permanent|basic|top tier|depth|balanc/i, theme: "Collection pyramid", guidance: "keep the Permanent base at 40 – 50 % and cap the Top tier at 12 % of volume" },
+  { re: /essential|bodysuit|sleepsuit|pack|nightwear|underwear/i, theme: "Essentials structures", guidance: "secure bodysuit packs and sleepsuits as the always-available core of the collection" },
+  { re: /price|ladder|pvi|€/i, theme: "Price ladder", guidance: "rebalance the 9 € over-density towards the 7 – 8 € price points" },
+  { re: /colou?r|palette|sage|ecru|pink|signature/i, theme: "Colour plan", guidance: "carry the season colour signature on at least two colourway references per essential structure" },
+  { re: /licen|character|disney|marvel|capsule/i, theme: "Licences & capsules", guidance: "hold licences within the 10 – 16 % collab share, dated capsules only" },
+  { re: /carbon|recycl|material|cotton|velour|sustain/i, theme: "Materials & carbon", guidance: "recycled cotton on the highest-volume structures, one low-carbon option per family" },
+  { re: /export|international|zone|core|specific|maghreb|south/i, theme: "Core vs specific", guidance: "flag export-eligible Core structures and limit Specific variants to one zone each" },
+  { re: /trend|impulse|animation|novelty|launch|dated/i, theme: "Animation rhythm", guidance: "plan dated launches so impulse picks reach 15 – 22 % of volume" },
+];
+const SAMPLE_COLLECTION_INTENTION = "For the S1 2027 Baby collection: keep the pyramid balanced with a strong Permanent base of bodysuit packs and sleepsuits, cap the Top tier at 12 %, rebalance the price ladder away from the 9 € over-density, carry the sage green and ecru colour signature on every essential structure, keep licences as dated capsules within the collab share and use recycled cotton on the biggest volumes. Flag the export-eligible Core structures for the South and Maghreb zones.";
+const BRIEF_KINDS = {
+  market: { label: "Market brief", from: "Market sub-tab of Framework", writer: "Market Manager", step: "Write the market brief", scope: "shared orientation for the whole market, then for the collections and the products", button: "Synthesize market brief", availableTo: "the Collection sub-tab and Product Manager", sources: MARKET_SOURCES, themes: BRIEF_THEMES, sample: SAMPLE_MARKET_INTENTION, placeholder: "Describe the market intention for S1 2027: price positioning, essentials to secure, comfort and material direction, low-carbon ambition, colour signature, licences, international reach…", footer: "keep every collection within the Financial and CO₂ frameworks", links: [["collection", "Collection sub-tab →"], ["product", "Product Manager →"]], emptyTxt: "No market brief yet — the Market Manager writes and synthesizes it in the Market sub-tab of Framework.", goLabel: "Go to the Market sub-tab", goSub: "market" },
+  collection: { label: "Collection brief", from: "Collection sub-tab of Framework", writer: "Collection Manager", step: "Write the collection brief", scope: "collection framing derived from the market brief, handed to the product managers", button: "Synthesize collection brief", availableTo: "Product Manager", sources: COLLECTION_SOURCES, themes: COLLECTION_THEMES, sample: SAMPLE_COLLECTION_INTENTION, placeholder: "Describe the collection intention for S1 2027: pyramid balance, essential structures, price ladder, colour plan, licences and capsules, materials, Core vs specific structures…", footer: "hand the collection framing to the Product Managers within the Financial and CO₂ frameworks", links: [["product", "Product Manager →"]], emptyTxt: "No collection brief yet — the Collection Manager writes and synthesizes it in the Collection sub-tab of Framework.", goLabel: "Go to the Collection sub-tab", goSub: "collection" },
+};
 /* Pure local synthesis: structured brief derived from the written intention and the selected (simulated) sources */
-function synthesizeMarketBrief(text, sourceIds) {
+function synthesizeBrief(text, sourceIds, kind, ctx = {}) {
   const clean = text.trim().replace(/\s+/g, " ");
   const sentences = clean.split(/[.!?]+\s+/).map((s) => s.trim()).filter(Boolean);
-  const themes = BRIEF_THEMES.filter((t) => t.re.test(clean));
-  const sources = MARKET_SOURCES.filter((s) => sourceIds.includes(s.id));
+  const themes = kind.themes.filter((t) => t.re.test(clean));
+  const sources = kind.sources.filter((s) => sourceIds.includes(s.id));
   const priorities = themes.slice(0, 4).map((t) => t.guidance);
-  priorities.push("keep every collection within the Financial Framework and CO₂ Framework envelopes");
+  priorities.push(kind.footer);
   return {
-    headline: sentences[0] ? sentences[0].replace(/[.!?]+$/, "").slice(0, 180) : "Market intention to be written",
-    themes: themes.length ? themes.map((t) => ({ theme: t.theme, guidance: t.guidance })) : [{ theme: "General market direction", guidance: "derive the collection guidelines from the intention above" }],
-    signals: sources.map((s) => ({ source: s.name, txt: s.signal })),
+    headline: sentences[0] ? sentences[0].replace(/[.!?]+$/, "").slice(0, 180) : "Intention to be written",
+    themes: themes.length ? themes.map((t) => ({ theme: t.theme, guidance: t.guidance })) : [{ theme: "General direction", guidance: "derive the guidelines from the intention above" }],
+    signals: sources.map((s) => ({ source: s.name, txt: typeof s.signal === "function" ? s.signal(ctx) : s.signal })),
     priorities,
     words: clean ? clean.split(" ").filter(Boolean).length : 0,
   };
 }
+const briefOf = (st, kindId) => (kindId === "market" ? st.marketBrief : st.collectionBrief);
 
-/* Step 1 of Market Framework: the Market Manager writes the intention and synthesizes the brief (editable here only) */
-function MarketBriefEditor({ st }) {
-  const brief = st.marketBrief;
+/* Step 1 of a framework sub-tab: the manager writes the intention and synthesizes the brief (editable here only) */
+function BriefEditor({ st, kindId }) {
+  const kind = BRIEF_KINDS[kindId];
+  const brief = briefOf(st, kindId);
   const [draft, setDraft] = useState(brief ? brief.text : "");
-  const [sources, setSources] = useState(() => new Set(brief ? brief.sourceIds : MARKET_SOURCES.map((s) => s.id)));
+  const [sources, setSources] = useState(() => new Set(brief ? brief.sourceIds : kind.sources.map((s) => s.id)));
   const toggle = (id) => setSources((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const canRun = draft.trim().length >= 20 && sources.size > 0;
-  const run = () => { const ids = MARKET_SOURCES.map((s) => s.id).filter((id) => sources.has(id)); st.setMarketBrief({ text: draft, sourceIds: ids, sourceNames: MARKET_SOURCES.filter((s) => ids.includes(s.id)).map((s) => s.name), summary: synthesizeMarketBrief(draft, ids), at: new Date() }); };
+  const run = () => {
+    const ids = kind.sources.map((s) => s.id).filter((id) => sources.has(id));
+    const b = { text: draft, sourceIds: ids, sourceNames: kind.sources.filter((s) => ids.includes(s.id)).map((s) => s.name), summary: synthesizeBrief(draft, ids, kind, { marketBrief: st.marketBrief }), at: new Date() };
+    if (kindId === "market") st.setMarketBrief(b); else st.setCollectionBrief(b);
+  };
   const dirty = brief && brief.text !== draft;
   return (
     <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
         <span style={{ width: 26, height: 26, borderRadius: 99, display: "grid", placeItems: "center", background: T.accent, color: "#ffffff", fontFamily: MONO, fontSize: 12, fontWeight: 800 }}>1</span>
-        <span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>Write the market brief</span>
-        <span style={{ fontSize: 11.5, color: T.faint }}>shared orientation for the whole market, then for the collections and the products</span>
+        <span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>{kind.step}</span>
+        <span style={{ fontSize: 11.5, color: T.faint }}>{kind.scope}</span>
         {brief && <span style={{ marginLeft: "auto" }}><Chip color={dirty ? T.warn : T.ok}>{dirty ? "Edited since last synthesis" : "Brief synthesized"}</Chip></span>}
       </div>
-      <span style={microLbl}>Trend data connectors — simulated sources, no network call</span>
+      <span style={microLbl}>Data connectors — simulated sources, no network call</span>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 14 }}>
-        {MARKET_SOURCES.map((s) => {
+        {kind.sources.map((s) => {
           const on = sources.has(s.id);
           return (
             <button key={s.id} onClick={() => toggle(s.id)} style={{ textAlign: "left", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 9, background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 10, padding: "10px 12px", fontFamily: SANS }}>
@@ -1020,41 +1049,43 @@ function MarketBriefEditor({ st }) {
           );
         })}
       </div>
-      <span style={microLbl}>Market intention — written by the Market Manager</span>
-      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={7} placeholder="Describe the market intention for S1 2027: price positioning, essentials to secure, comfort and material direction, low-carbon ambition, colour signature, licences, international reach…" style={{ display: "block", width: "100%", boxSizing: "border-box", resize: "vertical", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "11px 13px", fontSize: 12.5, lineHeight: 1.55, color: T.ink, outline: "none", fontFamily: SANS }} />
+      <span style={microLbl}>{kindId === "market" ? "Market" : "Collection"} intention — written by the {kind.writer}</span>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={7} placeholder={kind.placeholder} style={{ display: "block", width: "100%", boxSizing: "border-box", resize: "vertical", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "11px 13px", fontSize: 12.5, lineHeight: 1.55, color: T.ink, outline: "none", fontFamily: SANS }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
         <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>{draft.trim() ? `${u(draft.trim().split(/\s+/).length)} words · ${sources.size} source${sources.size > 1 ? "s" : ""} selected` : "empty intention"}</span>
-        <button onClick={() => setDraft(SAMPLE_MARKET_INTENTION)} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}><FileText size={12} /> Insert a sample intention</button>
-        <button onClick={run} disabled={!canRun} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, cursor: canRun ? "pointer" : "not-allowed", opacity: canRun ? 1 : 0.5, background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "10px 17px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}><Sparkles size={14} /> Synthesize market brief</button>
+        <button onClick={() => setDraft(kind.sample)} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}><FileText size={12} /> Insert a sample intention</button>
+        <button onClick={run} disabled={!canRun} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, cursor: canRun ? "pointer" : "not-allowed", opacity: canRun ? 1 : 0.5, background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "10px 17px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}><Sparkles size={14} /> {kind.button}</button>
       </div>
       {brief && (
         <div style={{ marginTop: 14 }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: `${T.ok}14`, border: `1px solid ${T.ok}66`, borderRadius: 11, padding: "11px 14px", marginBottom: 12, flexWrap: "wrap" }}>
             <BadgeCheck size={16} color={T.ok} style={{ flexShrink: 0, marginTop: 1 }} />
             <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: T.ink, lineHeight: 1.5 }}>
-              <strong>Market brief synthesized on {brief.at.toLocaleDateString("fr-FR")} at {brief.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong> — available to Collection Framework and Product Manager as a read-only copy. It stays editable here only.
+              <strong>{kind.label} synthesized on {brief.at.toLocaleDateString("fr-FR")} at {brief.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong> — available to {kind.availableTo} as a read-only copy. It stays editable here only.
             </div>
             <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
-              <button onClick={() => st.setTab("collection")} style={{ cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>Collection Framework →</button>
-              <button onClick={() => st.setTab("product")} style={{ cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>Product Manager →</button>
+              {kind.links.map(([target, label]) => (
+                <button key={target} onClick={() => (target === "product" ? st.goTo("product") : st.goTo("framework", target))} style={{ cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>{label}</button>
+              ))}
             </span>
           </div>
-          <MarketBriefCard st={st} origin={false} />
+          <BriefCard st={st} kindId={kindId} origin={false} />
         </div>
       )}
     </div>
   );
 }
 
-/* Read-only copy of the market brief (Collection Framework and Product Manager), with its provenance */
-function MarketBriefCard({ st, origin = true }) {
-  const b = st.marketBrief;
+/* Read-only copy of a brief (downstream tabs), with its provenance; discreet empty state with a link otherwise */
+function BriefCard({ st, kindId, origin = true }) {
+  const kind = BRIEF_KINDS[kindId];
+  const b = briefOf(st, kindId);
   if (!b) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: T.panel2, border: `1px dashed ${T.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
         <FileText size={15} color={T.faint} />
-        <span style={{ fontSize: 12, color: T.sub, flex: "1 1 240px" }}>No market brief yet — the Market Manager writes and synthesizes it in Market Framework.</span>
-        <button onClick={() => st.setTab("market")} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>Go to Market Framework <ArrowRight size={12} /></button>
+        <span style={{ fontSize: 12, color: T.sub, flex: "1 1 240px" }}>{kind.emptyTxt}</span>
+        <button onClick={() => st.goTo("framework", kind.goSub)} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>{kind.goLabel} <ArrowRight size={12} /></button>
       </div>
     );
   }
@@ -1062,8 +1093,8 @@ function MarketBriefCard({ st, origin = true }) {
   return (
     <div style={{ background: origin ? T.panel : T.panel2, border: `1px solid ${origin ? `${T.accent}44` : T.line}`, borderRadius: 12, padding: "14px 16px", marginBottom: origin ? 18 : 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <Crown size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Market brief</span>
-        {origin ? <Chip color={T.accent}>Read-only copy · from Market Framework</Chip> : <Chip color={T.ok}>Synthesis</Chip>}
+        {kindId === "market" ? <Crown size={15} color={T.accent} /> : <LayoutGrid size={15} color={T.accent} />}<span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{kind.label}</span>
+        {origin ? <Chip color={T.accent}>Read-only copy · from {kind.from}</Chip> : <Chip color={T.ok}>Synthesis</Chip>}
         <span style={{ marginLeft: "auto", fontSize: 10.5, fontFamily: MONO, color: T.faint }}>{b.at.toLocaleDateString("fr-FR")} · {b.sourceNames.join(", ")}</span>
       </div>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.45, marginBottom: 10 }}>{s.headline}.</div>
@@ -1081,19 +1112,19 @@ function MarketBriefCard({ st, origin = true }) {
           )) : <div style={{ fontSize: 11.5, color: T.faint }}>no source selected</div>}
         </div>
         <div>
-          <span style={microLbl}>Priorities for collections and products</span>
+          <span style={microLbl}>{kindId === "market" ? "Priorities for collections and products" : "Priorities for the product managers"}</span>
           {s.priorities.map((p, i) => (
             <div key={p} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: T.sub, lineHeight: 1.45, marginBottom: 5 }}><span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 800, color: T.accent, flexShrink: 0, marginTop: 1 }}>{i + 1}.</span><span>{p}</span></div>
           ))}
         </div>
       </div>
-      {origin && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 10 }}>Editable from Market Framework only · {u(s.words)} words in the source intention.</div>}
+      {origin && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 10 }}>Editable from the {kind.from} only · {u(s.words)} words in the source intention.</div>}
     </div>
   );
 }
 
 /* ============================================================
-   Market Framework (Market Manager) · Collection Framework (empty state) · Product Manager
+   Framework tab: Financial · CO₂ · Market · Collection sub-tabs
    ============================================================ */
 function MarketFrameworkPage({ st }) {
   return (
@@ -1108,20 +1139,44 @@ function MarketFrameworkPage({ st }) {
 function CollectionFrameworkPage({ st }) {
   return (
     <div>
-      <PageHeader title="Collection Framework" desc="Collection-level framing, built from the market brief before the product managers structure their offers." expert={{ role: "Business decision-maker", txt: "The collection framework will translate the market brief into guidelines for each collection structure. It is not built yet." }} />
+      <PageHeader title="Collection Framework" desc="Same principle as the Market sub-tab, applied to the collection: the Collection Manager turns the market brief into a collection brief for the product managers." expert={{ role: "Business decision-maker", txt: "The Collection Manager translates the market brief into a collection framing shared with every product manager." }} />
+      <span style={microLbl}>Input — market brief received from the Market sub-tab</span>
+      <BriefCard st={st} kindId="market" />
+      <BriefEditor st={st} kindId="collection" />
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 22, marginBottom: 18, textAlign: "center" }}>
         <span style={{ width: 44, height: 44, borderRadius: 12, display: "inline-grid", placeItems: "center", background: `${T.accent}12`, border: `1px solid ${T.accent}44`, marginBottom: 10 }}><LayoutGrid size={20} color={T.accent} /></span>
-        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Collection framework not built yet</div>
-        <div style={{ fontSize: 12, color: T.sub, marginTop: 4, lineHeight: 1.5 }}>The collection framing will be derived from the market brief once the Market Manager has synthesized it.</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Collection dashboard not built yet</div>
+        <div style={{ fontSize: 12, color: T.sub, marginTop: 4, lineHeight: 1.5 }}>Below the brief, the collection-level dashboard will follow the Market sub-tab principle once its indicators are defined.</div>
         <div style={{ display: "inline-block", textAlign: "left", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", marginTop: 14 }}>
           <span style={microLbl}>Coming next</span>
-          {["Collection guidelines derived from the market brief", "Framing per collection structure, shared with the product managers", "Hand-off to the Product Manager offer structuring"].map((t) => (
+          {["Collection guidelines derived from the collection brief", "Framing per collection structure, shared with the product managers", "Hand-off to the Product Manager offer structuring"].map((t) => (
             <div key={t} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: T.sub, lineHeight: 1.45, marginBottom: 4 }}><ArrowRight size={12} color={T.faint} style={{ flexShrink: 0, marginTop: 3 }} />{t}</div>
           ))}
         </div>
       </div>
-      <span style={microLbl}>Market brief received from Market Framework</span>
-      <MarketBriefCard st={st} />
+    </div>
+  );
+}
+
+const FW_SUBS = [{ id: "financial", label: "Financial", icon: Scale }, { id: "co2", label: "CO₂", icon: Leaf }, { id: "market", label: "Market", icon: Crown }, { id: "collection", label: "Collection", icon: LayoutGrid }];
+function FrameworkPage({ st, fw }) {
+  const sub = st.fwSub;
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        {FW_SUBS.map((t) => {
+          const on = sub === t.id;
+          return (
+            <button key={t.id} onClick={() => st.goTo("framework", t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: on ? T.human : T.panel2, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 999, padding: "8px 15px", fontSize: 12, fontWeight: 700, fontFamily: SANS }}>
+              <t.icon size={13} /> {t.label}
+            </button>
+          );
+        })}
+      </div>
+      {sub === "financial" && <BudgetPage st={st} fw={fw} />}
+      {sub === "co2" && <CO2Page fw={fw} />}
+      {sub === "market" && <MarketFrameworkPage st={st} />}
+      {sub === "collection" && <CollectionFrameworkPage st={st} />}
     </div>
   );
 }
@@ -1129,9 +1184,10 @@ function CollectionFrameworkPage({ st }) {
 function ProductManagerPage({ st }) {
   return (
     <div>
-      <PageHeader title="Product Manager" desc="From the market brief to the product sheet: structure the Baby offer, break it down into products, generate the product sheet from a voice note and validate development." expert={EXPERTS.design} />
+      <PageHeader title="Product Manager" desc="From the market and collection briefs to the product sheet: structure the Baby offer, break it down into products, generate the product sheet from a voice note and validate development." expert={EXPERTS.design} />
       <CascadeBanner st={st} area="Offer & Collection" />
-      <MarketBriefCard st={st} />
+      <BriefCard st={st} kindId="market" />
+      <BriefCard st={st} kindId="collection" />
       <ChefPage st={st} />
     </div>
   );
@@ -1286,214 +1342,6 @@ function ProductSheetAssistant({ st, locked }) {
               </div>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: MONO, fontWeight: 700, color: T.ok, background: `${T.ok}1c`, border: `1px solid ${T.ok}55`, padding: "5px 11px", borderRadius: 999, flexShrink: 0 }}><Check size={13} /> Written</span>
             </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ============================================================
-   Page 2 — Go to Market
-   ============================================================ */
-function GTMPage({ st }) {
-  const sel = st.sel;
-  const scen = st.recoFor(sel);
-  const [msgs, setMsgs] = useState([{ me: false, t: "Hello! I'm the supply agent for the Baby offer. Ask me your questions: recommendation, costs, lead times, CO₂, risks…" }]);
-  const [inp, setInp] = useState("");
-  const answer = (q) => {
-    const s = q.toLowerCase();
-    if (/(recommand|recommend|conseil|advi|meilleur|best|optimal|choisir|choose|lequel|which|préconis|preconis|suggest)/.test(s))
-      return `${st.lowCarbon ? "Low-carbon strategy active → I favour local sourcing. " : ""}I recommend “${scen.name}”: ${eur(scen.cost)}/pc · ${st.leadOf(scen)} d · stock-out ${st.rupOf(scen)} %. ${scen.note}`;
-    if (/(prix|price|coût|cout|cost|revient)/.test(s))
-      return sel.scenarios.map((x) => `${x.name}: ${eur(x.cost)}/pc`).join(" · ");
-    if (/(délai|delai|lead|temps|time)/.test(s))
-      return sel.scenarios.map((x) => `${x.name}: ${st.leadOf(x)} d`).join(" · ");
-    if (/(co2|carbone|carbon|empreinte|footprint)/.test(s))
-      return `Current footprint: ${st.co2Of(sel)} kg/pc${st.lowCarbon ? " (reduced by the Low-carbon strategy)" : ""}. Nearshore sourcing sharply reduces transport.`;
-    if (/(risque|risk|rupture|stock-out|stockout|alea|aléa)/.test(s))
-      return sel.scenarios.map((x) => `${x.name}: stock-out ${st.rupOf(x)} %`).join(" · ");
-    return `For “${sel.name}” (${u(st.volOf(sel))} units · PVI ${eur(st.pvcOf(sel))}), ask me for a recommendation, costs, lead times, the CO₂ footprint or the risks.`;
-  };
-  const send = () => { if (!inp.trim()) return; const q = inp.trim(); setMsgs((m) => [...m, { me: true, t: q }, { me: false, t: answer(q) }]); setInp(""); };
-
-  return (
-    <div>
-      <PageHeader title="Go to market" desc="Store launch brief, volume and selling price, then discussion with the supply agent." expert={EXPERTS.supply} />
-      <CascadeBanner st={st} area="Go to Market" />
-      <LowCarbonBanner st={st} context="gtm" prod={sel} />
-
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          <ClipboardList size={15} color={T.blue} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Collection structures awaiting a sourcing scenario</span>
-          <span style={{ fontSize: 11.5, color: T.faint }}>click a collection structure to arbitrate it in the panel below</span>
-        </div>
-        <div style={{ maxHeight: 300, overflowY: "auto", overflowX: "auto", border: `1px solid ${T.lineSoft}`, borderRadius: 10 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead><tr>{["Collection structure", "Segment", "Volume", "PVI", "Supply status"].map((c, j) => (
-              <th key={c} style={{ position: "sticky", top: 0, background: T.panel, zIndex: 1, textAlign: j === 0 ? "left" : "center", padding: "8px 10px", fontSize: 10, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}` }}>{c}</th>
-            ))}</tr></thead>
-            <tbody>
-              {PRODUITS.map((p) => {
-                const on = p.id === st.selId;
-                return (
-                  <tr key={p.id} onClick={() => st.setSelId(p.id)} style={{ cursor: "pointer", background: on ? `${T.blue}12` : "transparent" }}>
-                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.lineSoft}` }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ width: 26, height: 26, borderRadius: 7, display: "grid", placeItems: "center", fontSize: 13, background: `${p.color}33`, border: `1px solid ${p.color}88` }}>{p.img}</span>
-                        <span style={{ fontWeight: 700, color: T.ink, maxWidth: 280, display: "inline-block" }}>{p.name}</span>
-                      </span>
-                    </td>
-                    <td style={{ textAlign: "center", borderBottom: `1px solid ${T.lineSoft}` }}><Chip color={p.segment === "Nightwear" ? T.accent : p.segment === "Licences" ? T.human : T.silver}>{p.segment}</Chip></td>
-                    <td style={{ textAlign: "center", fontFamily: MONO, color: T.sub, borderBottom: `1px solid ${T.lineSoft}` }}>{u(st.volOf(p))}</td>
-                    <td style={{ textAlign: "center", fontFamily: MONO, color: T.sub, borderBottom: `1px solid ${T.lineSoft}` }}>{eur(st.pvcOf(p))}</td>
-                    <td style={{ textAlign: "center", borderBottom: `1px solid ${T.lineSoft}` }}>
-                      {st.validated.has(p.id) ? <Chip color={T.ok}>KFI validated</Chip> : st.returned.has(p.id) ? <Chip color={T.bad}>Sent back</Chip> : st.submitted.has(p.id) ? <Chip color={T.warn}>Submitted to KFI</Chip> : <Chip color={T.silver}>To arbitrate</Chip>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: T.faint, fontFamily: MONO }}>{PRODUITS.length} collection structures · select one, then pick a scenario to submit it to KFI</div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 16 }}>
-        <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <Factory size={15} color={T.blue} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Supply scenario — {sel.name}</span>
-          </div>
-          <div style={{ fontSize: 12, color: T.sub, marginBottom: 12 }}>
-            Collection structure: <strong style={{ color: T.ink }}>{sel.name}</strong> · volume <span style={{ fontFamily: MONO }}>{u(st.volOf(sel))} units</span> · PVI <span style={{ fontFamily: MONO }}>{eur(st.pvcOf(sel))}</span>
-          </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-            <label style={{ flex: "1 1 140px", fontSize: 10.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>Volume (units)
-              <input type="number" value={st.volOf(sel)} onChange={(e) => st.setVol(sel.id, +e.target.value || 0)} style={{ display: "block", width: "100%", marginTop: 5, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 10px", fontFamily: MONO, fontSize: 13, color: T.ink, outline: "none", boxSizing: "border-box" }} />
-            </label>
-            <label style={{ flex: "1 1 140px", fontSize: 10.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>PVI (€)
-              <input type="number" step="0.5" value={st.pvcOf(sel)} onChange={(e) => st.setPvc(sel.id, +e.target.value || 0)} style={{ display: "block", width: "100%", marginTop: 5, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 10px", fontFamily: MONO, fontSize: 13, color: T.ink, outline: "none", boxSizing: "border-box" }} />
-            </label>
-          </div>
-          <span style={microLbl}>Sourcing scenarios</span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-            {sel.scenarios.map((x) => {
-              const chosen = st.scenOf(sel) === x.id;
-              const isReco = scen.id === x.id;
-              return (
-                <button key={x.id} onClick={() => st.setScen(sel.id, x.id)} style={{ textAlign: "left", cursor: "pointer", background: chosen ? `${T.blue}12` : T.panel2, border: `1px solid ${chosen ? T.blue : T.line}`, borderRadius: 10, padding: "11px 13px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <Truck size={14} color={T.blue} /><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{x.name}</span>
-                    {isReco && <Chip color={st.lowCarbon ? T.ok : T.blue}>{st.lowCarbon ? "Low-carbon reco" : "Recommended"}</Chip>}
-                    {chosen && <Check size={14} color={T.blue} style={{ marginLeft: "auto" }} />}
-                  </div>
-                  <div style={{ fontSize: 11, color: T.sub, marginTop: 5, fontFamily: MONO }}>{eur(x.cost)}/pc · {st.leadOf(x)} d · stock-out {st.rupOf(x)} % · {x.splitProche}% nearshore · {x.usine}</div>
-                  <div style={{ fontSize: 10.5, color: T.faint, marginTop: 4, lineHeight: 1.4 }}>{x.note}</div>
-                </button>
-              );
-            })}
-          </div>
-          <button onClick={() => st.submit(sel.id)} disabled={st.submitted.has(sel.id) && !st.returned.has(sel.id)} style={{ marginTop: 14, display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: st.submitted.has(sel.id) && !st.returned.has(sel.id) ? T.line : T.blue, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}>
-            <Send size={14} /> {st.submitted.has(sel.id) && !st.returned.has(sel.id) ? "Already submitted to KFI" : "Submit the scenario to KFI"}
-          </button>
-        </div>
-
-        <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <MessageCircle size={15} color={T.human} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Supply agent — chat</span>
-          </div>
-          <div style={{ flex: 1, minHeight: 180, maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
-            {msgs.map((m, i) => (
-              <div key={i} style={{ alignSelf: m.me ? "flex-end" : "flex-start", maxWidth: "85%", background: m.me ? `${T.blue}18` : T.panel2, border: `1px solid ${m.me ? T.blue + "44" : T.line}`, borderRadius: 10, padding: "8px 11px", fontSize: 12, color: T.ink, lineHeight: 1.5 }}>{m.t}</div>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={inp} onChange={(e) => setInp(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="e.g. what do you recommend?" style={{ flex: 1, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 9, padding: "9px 12px", fontSize: 12.5, color: T.ink, outline: "none", fontFamily: SANS }} />
-            <button onClick={send} style={{ cursor: "pointer", background: T.human, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 13px", display: "grid", placeItems: "center" }}><Send size={14} /></button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
-   Page 3 — Supply (ITFAS validation)
-   ============================================================ */
-function ItfasPage({ st, embedded }) {
-  const rows = PRODUITS.filter((p) => st.submitted.has(p.id));
-  const sel = rows.find((p) => p.id === st.selId) || rows[0];
-  const scen = sel ? (sel.scenarios.find((x) => x.id === st.scenOf(sel)) || st.recoFor(sel)) : null;
-  const cap = sel ? (st.volOf(sel) < 250000
-    ? { v: "Capacity available", c: T.ok, t: "Volume absorbable by the current supplier network without strain." }
-    : st.volOf(sel) < 420000
-      ? { v: "Capacity adequate", c: T.warn, t: "Sustained volume: set the production phasing and secure the material." }
-      : { v: "Capacity tight", c: T.bad, t: "High volume vs nearshore capacity: Far-East import + managed replenishment mix recommended, secure the material upstream." }) : null;
-
-  return (
-    <div>
-      <PageHeader title="Supply" desc="Price validations transferred by Go to market — to be carried out by KFI." expert={EXPERTS.supply} />
-      <CascadeBanner st={st} area="Supply" />
-      <LowCarbonBanner st={st} context="supply" prod={sel || PRODUITS[0]} />
-
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <ShoppingBag size={15} color={T.blue} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Files transferred by Go to Market</span>
-        </div>
-        {rows.length === 0 ? (
-          <div style={{ fontSize: 12, color: T.faint }}>No file pending. Submit a scenario from the “Go to market” page.</div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead><tr>{["Collection structure", "Segment", "Volume", "Selling price", "Status"].map((c, j) => (
-                <th key={c} style={{ textAlign: j === 0 ? "left" : "center", padding: "8px 10px", fontSize: 10, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}` }}>{c}</th>
-              ))}</tr></thead>
-              <tbody>
-                {rows.map((p) => {
-                  const on = sel && p.id === sel.id;
-                  return (
-                    <tr key={p.id} onClick={() => st.setSelId(p.id)} style={{ cursor: "pointer", background: on ? `${T.blue}12` : "transparent" }}>
-                      <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.lineSoft}`, fontWeight: 700, color: T.ink }}>{p.img} {p.name}</td>
-                      <td style={{ textAlign: "center", borderBottom: `1px solid ${T.lineSoft}` }}><Chip color={p.segment === "Nightwear" ? T.accent : p.segment === "Licences" ? T.human : T.silver}>{p.segment}</Chip></td>
-                      <td style={{ textAlign: "center", fontFamily: MONO, color: T.sub, borderBottom: `1px solid ${T.lineSoft}` }}>{u(st.volOf(p))}</td>
-                      <td style={{ textAlign: "center", fontFamily: MONO, color: T.sub, borderBottom: `1px solid ${T.lineSoft}` }}>{eur(st.pvcOf(p))}</td>
-                      <td style={{ textAlign: "center", borderBottom: `1px solid ${T.lineSoft}` }}>
-                        {st.validated.has(p.id) ? <Chip color={T.ok}>Validated</Chip> : st.returned.has(p.id) ? <Chip color={T.bad}>Sent back</Chip> : <Chip color={T.warn}>Pending</Chip>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {sel && scen && (
-        <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <Factory size={15} color={T.blue} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Supply scenario — {sel.name}</span>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12, marginBottom: 14 }}>
-            <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px" }}>
-              <div style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, textTransform: "uppercase", marginBottom: 6 }}>{st.lowCarbon ? "Recommended scenario (Low carbon)" : "Selected scenario"}</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{scen.name}</div>
-              <div style={{ fontSize: 11, color: T.sub, fontFamily: MONO, marginTop: 5 }}>{eur(scen.cost)}/pc · {st.leadOf(scen)} d · stock-out {st.rupOf(scen)} % · {scen.splitProche}% nearshore</div>
-              <div style={{ fontSize: 10.5, color: T.faint, marginTop: 5 }}>{scen.usine} · focus: {scen.maitrise}</div>
-            </div>
-            <div style={{ background: T.panel2, border: `1px solid ${cap.c}55`, borderRadius: 11, padding: "12px 14px" }}>
-              <div style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, textTransform: "uppercase", marginBottom: 6 }}>Capacity verdict</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: cap.c }}>{cap.v}</div>
-              <div style={{ fontSize: 11, color: T.sub, marginTop: 5, lineHeight: 1.5 }}>{cap.t}</div>
-            </div>
-          </div>
-          {!st.validated.has(sel.id) ? (
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button onClick={() => st.validate(sel.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.ok, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}><Check size={14} /> Validate the price</button>
-              <button onClick={() => st.sendBack(sel.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.panel2, color: T.bad, border: `1px solid ${T.bad}66`, borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, fontFamily: SANS }}><RotateCcw size={14} /> Send back to Go to Market</button>
-            </div>
-          ) : (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: `${T.ok}14`, border: `1px solid ${T.ok}55`, borderRadius: 10, padding: "9px 14px", fontSize: 12.5, fontWeight: 700, color: T.ok }}><BadgeCheck size={15} /> Price validated by KFI — the collection structure switches to “Validated” across the whole cockpit.</div>
           )}
         </div>
       )}
@@ -3295,7 +3143,8 @@ function MonitoringPage({ fw }) {
    ============================================================ */
 
 export default function App() {
-  const [tab, setTab] = useState("financial");
+  const [tab, setTab] = useState("framework");
+  const [fwSub, setFwSub] = useState("financial");
   const [selId, setSelId] = useState(PRODUITS[0].id);
   const [agentId, setAgentId] = useState("essentiel");
   const [territoire, setTerritoire] = useState("Core");
@@ -3319,6 +3168,7 @@ export default function App() {
   const [co2Depts, setCo2Depts] = useState(CO2_DEPTS.map((d) => ({ ...d })));
   /* Market brief (written in Market Framework, read-only elsewhere), product sheet progress, approval snapshots */
   const [marketBrief, setMarketBrief] = useState(null);
+  const [collectionBrief, setCollectionBrief] = useState(null);
   const [sheets, setSheets] = useState({});
   const [snapshots, setSnapshots] = useState({});
   const [reopened, setReopened] = useState(new Set());
@@ -3391,17 +3241,13 @@ export default function App() {
     snapshotOf: (id) => snapshots[id],
     reopen: (id) => { const sn = snapshots[id]; if (sn) { setAgentId(sn.agentId); setTerritoire(sn.territoire); setZone(sn.zone); setColIdx(sn.colIdx); setLevers(new Set(sn.levers)); setPvcMap((m) => ({ ...m, [id]: sn.pvi })); setVolMap((m) => ({ ...m, [id]: sn.volume })); setScenMap((m) => ({ ...m, [id]: sn.scenId })); } setReopened((r) => new Set(r).add(id)); setNote(""); },
     setSheet: (id, info) => setSheets((m) => ({ ...m, [id]: info })),
-    marketBrief, setMarketBrief, setTab,
+    marketBrief, setMarketBrief, collectionBrief, setCollectionBrief, fwSub, setTab, goTo: (t, sub) => { setTab(t); if (sub) setFwSub(sub); },
   };
   const fw = { budgetGlob, setBudgetGlob, budgetDepts, setBudgetDepts, co2Glob, setCo2Glob, co2Depts, setCo2Depts };
 
   const TABS = [
-    { id: "financial", label: "Financial Framework", icon: Scale },
-    { id: "co2", label: "CO₂ Framework", icon: Leaf },
-    { id: "market", label: "Market Framework", icon: Crown },
-    { id: "collection", label: "Collection Framework", icon: LayoutGrid },
+    { id: "framework", label: "Framework", icon: Layers },
     { id: "product", label: "Product Manager", icon: Baby },
-    { id: "gtm", label: "Go to Market", icon: ShoppingBag },
     { id: "itfas", label: "KFI", icon: Factory },
     { id: "monitoring", label: "Monitoring", icon: TrendingUp },
   ];
@@ -3427,12 +3273,8 @@ export default function App() {
             );
           })}
         </div>
-        {tab === "financial" && <BudgetPage st={st} fw={fw} />}
-        {tab === "co2" && <CO2Page fw={fw} />}
-        {tab === "market" && <MarketFrameworkPage st={st} />}
-        {tab === "collection" && <CollectionFrameworkPage st={st} />}
+        {tab === "framework" && <FrameworkPage st={st} fw={fw} />}
         {tab === "product" && <ProductManagerPage st={st} />}
-        {tab === "gtm" && <GTMPage st={st} />}
         {tab === "itfas" && <ProductionPage st={st} />}
         {tab === "monitoring" && <MonitoringPage fw={fw} />}
       </div>
