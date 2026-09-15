@@ -2625,7 +2625,7 @@ function BudgetModule({ fw }) {
   return (
     <div>
       {/* Stepper */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 18 }}>
         {STEPS.map(([t, sub], i) => {
           const n = i + 1, on = step === n, done = step > n;
           const c = on ? T.accent : done ? T.ok : T.faint;
@@ -2849,7 +2849,7 @@ function CO2Module({ fw }) {
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 18 }}>
         {STEPS.map(([t, sub], i) => {
           const n = i + 1, on = step === n, done = step > n;
           const c = on || done ? G : T.faint;
