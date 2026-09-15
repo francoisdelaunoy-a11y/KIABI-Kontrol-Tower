@@ -1319,6 +1319,7 @@ const DECISIONS = [
   { dot: "#e05a5a", title: "Inflation Turquie", tag: "Macro-éco", tagC: "#e05a5a", txt: "8 fournisseurs · +15% coût · −20% capa dispo", cta: "Voir les scénarios →", strong: "8 fournisseurs" },
   { dot: "#7fa3c4", title: "Sourcer 2 fournisseurs knit bas carbone", tag: "CAPACITÉ", tagC: "#7fa3c4", txt: "−35% vs besoin certifié à 18 mois", cta: "Explorer →" },
   { dot: "#7fa3c4", title: "Fermer 3 fournisseurs sous-performants", tag: "PANEL", tagC: "#7fa3c4", txt: "Score < C depuis 2 cycles · 4% du volume", cta: "Explorer →" },
+  { dot: "#dfa93f", title: "Commandes S1 2027 sous le business plan Asie B", tag: "BUSINESS PLAN", tagC: "#dfa93f", txt: "150 kpcs commandés vs 250 kpcs contractuels · 50 kpcs hors panel à résorber", cta: "Arbitrer →", strong: "150 kpcs" },
 ];
 const MATCH_READY = [
   { score: 96, name: "Cankiri A1", g: "A", pays: "Turquie", txt: "Capacité dispo · prix aligné · certifié coton bio · audit A" },
@@ -1362,6 +1363,622 @@ const AuditChip = ({ s }) => {
 const VensoTag = ({ txt }) => (
   <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 11, color: T.human }}><Sparkles size={12} /> {txt}</span>
 );
+/* ============================================================
+   KFI — Business plan partenaires × prévisions en saison
+   (réconciliation temps long industriel × temps court commercial)
+   ============================================================ */
+const kp = (n) => `${u(Math.round(n / 1000))} kpcs`;
+const mp = (n) => `${(n / 1e6).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} M pcs`;
+const sg = (n, d = 1) => { const f = 10 ** d, r = Math.round(n * f) / f; return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r).toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d })}`; };
+const sp = (n, d = 1) => `${sg(n, d)} %`;
+const pc = (n, d = 1) => `${Number(n).toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d })} %`;
+
+const KFI_HORS = "hors";
+const KFI_TARGETS = { quality: 95, traceability: 95, flexPremium: 0.02, carbonRushFactor: 0.5 };
+const KFI_PARTNER_PLANS = [
+  { id: "cankiri", supplier: "Cankiri A1", country: "Turquie", grade: "A", family: "Knit coton", plannedVolume: 360000, minCommitment: 320000, maxCapacity: 430000, targetCost: 4.95, qualityTarget: 95, traceability: 100, carbon: 1.3, rseStatus: "Validé", rseOk: true, rseInProgress: false, complianceStatus: "CS3D prêt", complianceValidated: true, complianceWatch: false, partnershipHorizon: "36 mois", developmentAction: "Contrat cadre 2027-2029 avec paliers volume knit" },
+  { id: "roubaix", supplier: "Roubaix G2", country: "France", grade: "A", family: "Petites séries réactives", plannedVolume: 160000, minCommitment: 140000, maxCapacity: 210000, targetCost: 6.2, qualityTarget: 97, traceability: 100, carbon: 0.95, rseStatus: "Validé · bas carbone", rseOk: true, rseInProgress: false, complianceStatus: "Validé", complianceValidated: true, complianceWatch: false, partnershipHorizon: "36 mois", developmentAction: "Ligne réactive réservée S1 2027, réassort sous 3 semaines" },
+  { id: "izmir", supplier: "Izmir D3", country: "Turquie", grade: "B", family: "Velours et nuit", plannedVolume: 280000, minCommitment: 250000, maxCapacity: 330000, targetCost: 5.25, qualityTarget: 93, traceability: 92, carbon: 1.4, rseStatus: "Plan de progrès env. C→B", rseOk: true, rseInProgress: true, complianceStatus: "Validé", complianceValidated: true, complianceWatch: false, partnershipHorizon: "18 mois", developmentAction: "Jalon environnemental C→B en mars 2027, coaching IA" },
+  { id: "asieb", supplier: "Fournisseur Asie B", country: "Chine", grade: "C", family: "Grands volumes permanents", plannedVolume: 250000, minCommitment: 250000, maxCapacity: 370000, targetCost: 4.35, qualityTarget: 91, traceability: 78, carbon: 1.85, rseStatus: "Audit valide", rseOk: true, rseInProgress: false, complianceStatus: "Traçabilité à renforcer", complianceValidated: true, complianceWatch: true, partnershipHorizon: "12 mois", developmentAction: "Traçabilité fil à 90 % avant S2 2027, audit social à reprogrammer" },
+];
+/* Voie hors panel : fournisseur non qualifié, prix spot attractif mais compliance et traçabilité non validées, transport aérien */
+const KFI_OFF_PANEL = { id: KFI_HORS, supplier: "Hors panel — sourcing urgence", targetCost: 5.1, qualityTarget: 86, traceability: 15, carbon: 3.08, complianceValidated: false };
+
+const kfiFam = (family, plan, forecast, lead, confidence, firm) => ({ family, plan, forecast, lead, confidence, firm });
+const KFI_FORECAST_SCENARIOS = [
+  { id: "base", name: "Base", total: 1050000, note: "Plan initial S1 2027", families: [
+    kfiFam("Nuit", 345000, 345000, "10 sem.", "Haute", 230000),
+    kfiFam("Sous-vêtements", 425000, 425000, "9 sem.", "Haute", 290000),
+    kfiFam("Licences", 170000, 170000, "14 sem.", "Moyenne", 100000),
+    kfiFam("Capsule mass market", 110000, 110000, "7 sem.", "Moyenne", 50000),
+  ] },
+  { id: "pic", name: "Pic de demande", total: 1240000, note: "Accélération Nuit et Sous-vêtements, délai inchangé", families: [
+    kfiFam("Nuit", 345000, 420000, "10 sem.", "Haute", 260000),
+    kfiFam("Sous-vêtements", 425000, 500000, "9 sem.", "Haute", 310000),
+    kfiFam("Licences", 170000, 180000, "14 sem.", "Moyenne", 120000),
+    kfiFam("Capsule mass market", 110000, 140000, "7 sem.", "Faible", 60000),
+  ] },
+  { id: "retour", name: "Retournement", total: 890000, note: "Baisse Licences, risque de sous-respect des engagements minimums", families: [
+    kfiFam("Nuit", 345000, 320000, "12 sem.", "Moyenne", 200000),
+    kfiFam("Sous-vêtements", 425000, 390000, "10 sem.", "Moyenne", 250000),
+    kfiFam("Licences", 170000, 110000, "16 sem.", "Faible", 70000),
+    kfiFam("Capsule mass market", 110000, 70000, "9 sem.", "Faible", 30000),
+  ] },
+];
+/* Allocation fictive initiale par scénario (pièces) — famille × partenaire, "hors" = sourcing d'urgence hors panel */
+const KFI_DEFAULT_ALLOC = {
+  base: {
+    "Nuit": { cankiri: 95000, roubaix: 30000, izmir: 220000, asieb: 0, hors: 0 },
+    "Sous-vêtements": { cankiri: 225000, roubaix: 40000, izmir: 20000, asieb: 140000, hors: 0 },
+    "Licences": { cankiri: 40000, roubaix: 90000, izmir: 40000, asieb: 0, hors: 0 },
+    "Capsule mass market": { cankiri: 0, roubaix: 0, izmir: 0, asieb: 110000, hors: 0 },
+  },
+  pic: {
+    "Nuit": { cankiri: 120000, roubaix: 30000, izmir: 250000, asieb: 0, hors: 0 },
+    "Sous-vêtements": { cankiri: 250000, roubaix: 60000, izmir: 40000, asieb: 100000, hors: 0 },
+    "Licences": { cankiri: 40000, roubaix: 100000, izmir: 30000, asieb: 0, hors: 0 },
+    "Capsule mass market": { cankiri: 0, roubaix: 0, izmir: 0, asieb: 50000, hors: 50000 },
+  },
+  retour: {
+    "Nuit": { cankiri: 80000, roubaix: 30000, izmir: 210000, asieb: 0, hors: 0 },
+    "Sous-vêtements": { cankiri: 210000, roubaix: 40000, izmir: 20000, asieb: 120000, hors: 0 },
+    "Licences": { cankiri: 30000, roubaix: 70000, izmir: 10000, asieb: 0, hors: 0 },
+    "Capsule mass market": { cankiri: 0, roubaix: 0, izmir: 0, asieb: 70000, hors: 0 },
+  },
+};
+const KFI_VERDICT_RANK = { Conforme: 0, "Sous tension": 1, Violation: 2 };
+const KFI_VERDICT_C = { Conforme: "#3fb27f", "Sous tension": "#dfa93f", Violation: "#e05a5a" };
+const kfiWorst = (...vs) => vs.reduce((w, v) => (KFI_VERDICT_RANK[v] > KFI_VERDICT_RANK[w] ? v : w), "Conforme");
+const kfiSum = (arr, f) => arr.reduce((s, x) => s + (f ? f(x) : x), 0);
+
+/* Fonction pure : confronte les engagements partenaires (plans) aux prévisions (forecast) et à l'allocation (famille × voie).
+   policy = { derogation: bool (hors panel toléré), catchUp: { [partnerId]: bool } (plan de rattrapage contractuel formalisé) } */
+function computeKfiReconciliation(plans, forecast, allocation, policy = {}) {
+  const derogation = !!policy.derogation;
+  const catchUp = policy.catchUp || {};
+  const rows = forecast.families;
+  const totalForecast = kfiSum(rows, (x) => x.forecast);
+  const totalPlan = kfiSum(rows, (x) => x.plan);
+  const totalFirm = kfiSum(rows, (x) => x.firm);
+  const planDeltaPct = totalPlan ? ((totalForecast - totalPlan) / totalPlan) * 100 : 0;
+  const allocOf = (id) => kfiSum(rows, (x) => (allocation[x.family] || {})[id] || 0);
+  const horsPanel = allocOf(KFI_HORS);
+
+  /* --- lecture partenaire par partenaire --- */
+  const partners = plans.map((p) => {
+    const alloc = allocOf(p.id);
+    const overload = Math.max(0, alloc - p.maxCapacity);
+    const margin = p.maxCapacity > 0 ? ((p.maxCapacity - alloc) / p.maxCapacity) * 100 : 0;
+    const minGap = alloc - p.minCommitment;
+    const planGap = alloc - p.plannedVolume;
+    const overPlan = Math.max(0, planGap);
+    const nearCapacity = overload === 0 && margin < 10;
+    const shortfall = minGap < 0;
+    const covered = !!catchUp[p.id];
+    const issues = [];
+    let verdict = "Conforme";
+    if (overload > 0) { verdict = "Violation"; issues.push(`capacité dépassée de ${kp(overload)}`); }
+    if (alloc > 0 && !p.complianceValidated) { verdict = "Violation"; issues.push("compliance non validée"); }
+    if (alloc > 0 && !p.rseOk) { verdict = "Violation"; issues.push("politique RSE non respectée"); }
+    if (verdict !== "Violation") {
+      if (nearCapacity) { verdict = "Sous tension"; issues.push(`marge de capacité ${pc(margin)}`); }
+      if (shortfall) { verdict = "Sous tension"; issues.push(`engagement minimum sous-réalisé de ${kp(-minGap)}${covered ? " · plan de rattrapage formalisé" : ""}`); }
+      if (alloc > 0 && p.traceability < 90) { verdict = "Sous tension"; issues.push(`traçabilité ${pc(p.traceability, 0)} sous le seuil de 90 %`); }
+      if (alloc > 0 && p.qualityTarget < KFI_TARGETS.quality - 3) { verdict = "Sous tension"; issues.push(`objectif qualité ${pc(p.qualityTarget, 0)} sous le plancher de ${pc(KFI_TARGETS.quality - 3, 0)}`); }
+      if (p.rseInProgress && nearCapacity) issues.push("plan RSE à protéger");
+    }
+    const capaTxt = overload > 0 ? `Capacité dépassée de ${kp(overload)}` : nearCapacity ? `Proche de la capacité (marge ${pc(margin)})` : `Dans la capacité (marge ${pc(margin)})`;
+    const planTxt = planGap === 0 ? "au business plan" : `${sg(planGap / 1000, 0)} kpcs vs business plan`;
+    const text = shortfall ? `${capaTxt} · sous l'engagement minimum de ${kp(-minGap)}` : `${capaTxt} · ${planTxt}`;
+    return { ...p, alloc, overload, margin, minGap, planGap, overPlan, nearCapacity, shortfall, catchUp: covered, verdict, issues, text };
+  });
+
+  /* --- voies hors panel et non couvert --- */
+  const horsVerdict = horsPanel === 0 ? "Conforme" : derogation ? "Sous tension" : "Violation";
+  const horsText = horsPanel === 0 ? "Aucun volume hors panel" : derogation ? "Dérogation direction achats · compliance et traçabilité non validées" : "Violation de politique : fournisseur non qualifié";
+  const families = rows.map((x) => {
+    const a = allocation[x.family] || {};
+    const allocated = kfiSum(Object.values(a));
+    return { family: x.family, forecast: x.forecast, firm: x.firm, allocated, uncovered: x.forecast - allocated };
+  });
+  const uncovered = kfiSum(families, (f) => Math.max(0, f.uncovered));
+  const overAllocated = kfiSum(families, (f) => Math.max(0, -f.uncovered));
+  const panelAllocated = kfiSum(partners, (p) => p.alloc);
+  const allocated = panelAllocated + horsPanel;
+  const coverage = totalForecast ? (panelAllocated / totalForecast) * 100 : 0;
+  const offPolicy = horsPanel + kfiSum(partners, (p) => (p.verdict === "Violation" ? p.alloc : 0));
+  const offPolicyPct = totalForecast ? (offPolicy / totalForecast) * 100 : 0;
+
+  /* --- projections pondérées par l'allocation --- */
+  const sources = [...partners, { ...KFI_OFF_PANEL, alloc: horsPanel, overPlan: 0, plannedVolume: 0 }];
+  const planVol = kfiSum(plans, (p) => p.plannedVolume) || 1;
+  const wPlan = (k) => kfiSum(plans, (p) => p.plannedVolume * p[k]) / planVol;
+  const wProj = (k, extra = 0) => (allocated ? (kfiSum(sources, (s) => s.alloc * s[k]) + extra) / allocated : wPlan(k));
+  const premium = KFI_TARGETS.flexPremium * kfiSum(partners, (p) => p.overPlan * p.targetCost);
+  const rush = KFI_TARGETS.carbonRushFactor * kfiSum(partners, (p) => p.overPlan * p.carbon);
+  const planCost = wPlan("targetCost"), projCost = wProj("targetCost", premium);
+  const planQuality = wPlan("qualityTarget"), projQuality = wProj("qualityTarget");
+  const planTrace = wPlan("traceability"), projTrace = wProj("traceability");
+  const planCarbon = wPlan("carbon"), projCarbon = wProj("carbon", rush);
+  const costDeltaPct = planCost ? (projCost / planCost - 1) * 100 : 0;
+  const carbonDeltaPct = planCarbon ? (projCarbon / planCarbon - 1) * 100 : 0;
+  const nonValidated = kfiSum(sources, (s) => (s.complianceValidated ? 0 : s.alloc));
+  const complianceShare = allocated ? ((allocated - nonValidated) / allocated) * 100 : 100;
+
+  /* --- causes : qui porte chaque écart --- */
+  const shareA = (s) => (allocated ? s.alloc / allocated : 0);
+  const shareP = (s) => (s.plannedVolume || 0) / planVol;
+  const label = (s) => (s.id === KFI_HORS ? "sourcing d'urgence" : s.supplier);
+  const de = (name) => (/^[aeiouyâêîôûéèh]/i.test(name) ? `d'${name}` : `de ${name}`);
+  const costCarriers = sources.map((s) => ({ id: s.id, name: label(s), impact: (shareA(s) - shareP(s)) * (s.targetCost - planCost) + (allocated ? (KFI_TARGETS.flexPremium * (s.overPlan || 0) * s.targetCost) / allocated : 0), s }))
+    .filter((c) => c.impact > 0.004).sort((a, b) => b.impact - a.impact)
+    .map((c) => ({ id: c.id, txt: `${c.s.id === KFI_HORS ? `${c.name} (${kp(c.s.alloc)} à ${fr2(c.s.targetCost)} €)` : c.s.planGap < 0 ? `recul ${de(c.name)} (${sg(c.s.planGap / 1000, 0)} kpcs à ${fr2(c.s.targetCost)} €)` : `montée ${de(c.name)} (${sg(c.s.planGap / 1000, 0)} kpcs à ${fr2(c.s.targetCost)} €${c.s.overPlan > 0 ? ", surcoût de flexibilité" : ""})`} : ${sg(c.impact, 2)} €/pc` }));
+  const gapCarriers = (k, target, unit) => sources.filter((s) => s.alloc > 0 && s[k] < target)
+    .map((s) => ({ id: s.id, pts: (s.alloc * (target - s[k])) / (allocated || 1), s })).sort((a, b) => b.pts - a.pts)
+    .map((c) => ({ id: c.id, txt: `${label(c.s)} (${pc(c.s[k], 0)}, ${kp(c.s.alloc)}) : ${sg(-c.pts, 1)} ${unit}` }));
+  const qualityCarriers = gapCarriers("qualityTarget", KFI_TARGETS.quality, "pt");
+  const traceCarriers = gapCarriers("traceability", KFI_TARGETS.traceability, "pt");
+  const complianceCarriers = sources.filter((s) => s.alloc > 0 && (!s.complianceValidated || s.complianceWatch)).map((s) => ({ id: s.id, txt: s.complianceValidated ? `${label(s)} : ${s.complianceStatus} (${kp(s.alloc)})` : `${label(s)} : ${kp(s.alloc)} non qualifiés${derogation ? " sous dérogation" : ""}` }));
+  const carbonCarriers = sources.map((s) => ({ id: s.id, impact: (shareA(s) - shareP(s)) * (s.carbon - planCarbon) + (allocated ? (KFI_TARGETS.carbonRushFactor * (s.overPlan || 0) * s.carbon) / allocated : 0), s }))
+    .filter((c) => c.impact > 0.004).sort((a, b) => b.impact - a.impact)
+    .map((c) => ({ id: c.id, txt: `${c.s.id === KFI_HORS ? `${label(c.s)} en aérien (${fr2(c.s.carbon)} kg/pc)` : c.s.overPlan > 0 ? `flux accéléré sur ${kp(c.s.overPlan)} au-dessus du plan chez ${label(c.s)}` : `montée ${de(label(c.s))} (${fr2(c.s.carbon)} kg/pc)`} : ${sg((c.impact / (planCarbon || 1)) * 100, 1)} %` }));
+  partners.forEach((p) => { if (p.rseInProgress && p.nearCapacity) carbonCarriers.push({ id: p.id, txt: `${p.supplier} saturé : jalon environnemental C→B à protéger` }); });
+
+  /* --- verdicts par dimension : le global est le pire --- */
+  const capaV = partners.some((p) => p.overload > 0) ? "Violation" : partners.some((p) => p.nearCapacity || p.shortfall) ? "Sous tension" : "Conforme";
+  const compV = (horsPanel > 0 && !derogation) || partners.some((p) => p.alloc > 0 && !p.complianceValidated) ? "Violation" : horsPanel > 0 || partners.some((p) => p.alloc > 0 && p.complianceWatch) ? "Sous tension" : "Conforme";
+  const rseV = partners.some((p) => p.alloc > 0 && !p.rseOk) ? "Violation" : carbonDeltaPct > 5 || partners.some((p) => p.rseInProgress && p.nearCapacity) ? "Sous tension" : "Conforme";
+  const qualV = projQuality < KFI_TARGETS.quality - 5 ? "Violation" : projQuality < KFI_TARGETS.quality ? "Sous tension" : "Conforme";
+  const traceV = projTrace < KFI_TARGETS.traceability - 5 ? "Violation" : projTrace < KFI_TARGETS.traceability ? "Sous tension" : "Conforme";
+  const dims = [
+    { k: "capacite", label: "Capacité", verdict: capaV, why: capaV === "Conforme" ? "capacités et minimums respectés" : partners.filter((p) => p.overload > 0 || p.nearCapacity || p.shortfall).map((p) => `${p.supplier} : ${p.issues[0]}`).join(" · ") },
+    { k: "compliance", label: "Compliance", verdict: compV, why: compV === "Conforme" ? "100 % du volume sur partenaires qualifiés" : complianceCarriers.map((c) => c.txt).join(" · ") },
+    { k: "rse", label: "RSE / carbone", verdict: rseV, why: rseV === "Conforme" ? "trajectoire carbone tenue" : `carbone ${sp(carbonDeltaPct)} vs trajectoire · ${carbonCarriers.map((c) => c.txt).join(" · ")}` },
+    { k: "qualite", label: "Qualité", verdict: qualV, why: qualV === "Conforme" ? `qualité projetée ${pc(projQuality)} ≥ cible` : `qualité projetée ${pc(projQuality)} vs cible ${pc(KFI_TARGETS.quality, 0)} · ${qualityCarriers.map((c) => c.txt).join(" · ")}` },
+    { k: "tracabilite", label: "Traçabilité", verdict: traceV, why: traceV === "Conforme" ? `traçabilité projetée ${pc(projTrace)} ≥ cible` : `traçabilité projetée ${pc(projTrace)} vs cible ${pc(KFI_TARGETS.traceability, 0)} · ${traceCarriers.map((c) => c.txt).join(" · ")}` },
+  ];
+  const globalVerdict = kfiWorst(capaV, compV, rseV, qualV, traceV, horsVerdict);
+
+  /* --- contrôles de cohérence (chaîne) --- */
+  const checks = [];
+  const dSum = totalForecast - forecast.total;
+  checks.push({ id: "sum", ok: dSum === 0, label: `Somme des familles ${kp(totalForecast)} = volume scénario ${kp(forecast.total)}`, gap: `écart de ${sg(dSum / 1000, 0)} kpcs entre les familles et le volume total`, action: "ajuster une famille ou le volume total du scénario" });
+  const firmBad = rows.filter((x) => x.firm > x.forecast);
+  checks.push({ id: "firm", ok: firmBad.length === 0, label: `Commandes fermes ${kp(totalFirm)} ≤ prévisions par famille`, gap: firmBad.map((x) => `${x.family} : commande ferme ${kp(x.firm)} > prévision ${kp(x.forecast)}`).join(" · "), action: "relever la prévision ou corriger la commande ferme" });
+  const overFam = families.filter((f) => f.uncovered < 0);
+  checks.push({ id: "alloc", ok: overFam.length === 0, label: `Allocations ${kp(allocated)} + non couvert ${kp(uncovered)} = prévision ${kp(totalForecast)}`, gap: overFam.map((f) => `${f.family} : ${kp(f.allocated)} alloués pour ${kp(f.forecast)} prévus (${sg(-f.uncovered / 1000, 0)} kpcs)`).join(" · "), action: "retirer le volume sur-alloué de la famille" });
+  const overCap = partners.filter((p) => p.overload > 0);
+  checks.push({ id: "capa", ok: overCap.length === 0, label: "Aucune allocation ne dépasse la capacité maximale", gap: overCap.map((p) => `${p.supplier} : ${kp(p.alloc)} > capacité ${kp(p.maxCapacity)} (${sg(p.overload / 1000, 0)} kpcs)`).join(" · "), action: "réduire l'allocation ou valider une extension de capacité" });
+  const shortNoPlan = partners.filter((p) => p.shortfall && !p.catchUp);
+  const shortAll = partners.filter((p) => p.shortfall);
+  checks.push({ id: "min", ok: shortNoPlan.length === 0, label: shortAll.length === 0 ? "Engagements minimums partenaires respectés" : `Engagements minimums signalés : ${shortAll.map((p) => `${p.supplier} ${sg(p.minGap / 1000, 0)} kpcs${p.catchUp ? " (rattrapage formalisé)" : ""}`).join(", ")}`, gap: shortNoPlan.map((p) => `${p.supplier} : ${kp(p.alloc)} < engagement ${kp(p.minCommitment)} (${sg(p.minGap / 1000, 0)} kpcs)`).join(" · "), action: "réallouer du volume ou formaliser un plan de rattrapage contractuel" });
+  checks.push({ id: "hors", ok: horsPanel === 0 || derogation, label: horsPanel === 0 ? "Aucune allocation hors panel" : `Hors panel ${kp(horsPanel)} sous dérogation`, gap: `${kp(horsPanel)} alloués à un fournisseur hors panel non qualifié`, action: "supprimer le hors-panel ou sélectionner une dérogation" });
+  const nonConf = partners.filter((p) => p.alloc > 0 && (!p.complianceValidated || !p.rseOk));
+  checks.push({ id: "conf", ok: nonConf.length === 0, label: "Partenaires alloués conformes (compliance et RSE validées)", gap: nonConf.map((p) => `${p.supplier} : ${kp(p.alloc)} alloués sans compliance validée`).join(" · "), action: "suspendre l'allocation jusqu'à validation" });
+  const chainOk = checks.every((c) => c.ok);
+
+  return {
+    totalForecast, totalPlan, totalFirm, planDeltaPct, allocated, panelAllocated, horsPanel, uncovered, overAllocated, coverage, offPolicy, offPolicyPct,
+    partners, families, horsVerdict, horsText,
+    planCost, projCost, costDeltaPct, planQuality, projQuality, planTrace, projTrace, planCarbon, projCarbon, carbonDeltaPct, complianceShare, nonValidated,
+    costCarriers, qualityCarriers, traceCarriers, complianceCarriers, carbonCarriers,
+    dims, globalVerdict, checks, chainOk,
+  };
+}
+
+/* ---- Module KFI : composants d'affichage ---- */
+const KFI_STEPS = [["Business plan & panel cible", "engagements contractuels et trajectoires partenaires"], ["Prévisions reçues", "scénario de demande et variation vs plan"], ["Confrontation & allocation", "capacité, conformité et couverture du panel"], ["Arbitrage KFI", "décision, mesures compensatoires et justification"]];
+const KFI_CONF_C = { Haute: "#3fb27f", Moyenne: "#dfa93f", Faible: "#e05a5a" };
+const KFI_INPUT = { width: 72, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 7px", fontFamily: MONO, fontSize: 12, fontWeight: 700, color: T.ink, outline: "none", textAlign: "right" };
+const KFI_TH = { padding: "7px 9px", fontSize: 10, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap", textAlign: "left" };
+const KFI_TD = { padding: "7px 9px", borderBottom: `1px solid ${T.lineSoft}`, fontSize: 12, color: T.ink, whiteSpace: "nowrap" };
+const KFI_NUM = { ...KFI_TD, fontFamily: MONO, textAlign: "right" };
+const kfiClone = (o) => JSON.parse(JSON.stringify(o));
+const KfiVerdict = ({ v }) => <Chip color={KFI_VERDICT_C[v]}>{v}</Chip>;
+const KfiToggle = ({ on, onClick, children }) => (
+  <button onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: on ? `${T.ok}14` : T.panel, color: on ? T.ok : T.sub, border: `1px solid ${on ? T.ok : T.line}`, borderRadius: 9, padding: "7px 11px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS, textAlign: "left" }}>
+    <span style={{ width: 14, height: 14, borderRadius: 4, flexShrink: 0, display: "grid", placeItems: "center", background: on ? T.ok : "transparent", border: `1.5px solid ${on ? T.ok : T.line}`, color: "#ffffff" }}>{on && <Check size={10} />}</span>{children}
+  </button>
+);
+const KFI_ARBITRATIONS = [
+  { id: "proteger", name: "Protéger le business plan", desc: (r) => `Respecter les minimums partenaires, phaser ${kp(r.uncovered + r.horsPanel)} sur quatre semaines, aucun hors-panel.`, effects: [["Couverture", "100 %", "#3fb27f"], ["Délai", "+12 j", "#dfa93f"], ["Prix rendu", "+1,4 %", "#dfa93f"], ["Hors politique", "0 %", "#3fb27f"], ["Trajectoire RSE", "préservée", "#3fb27f"]],
+    actions: (r) => [`Phaser ${kp(r.uncovered + r.horsPanel)} sur quatre semaines avec le commerce`, "Remonter Fournisseur Asie B à son engagement contractuel", "Refuser toute allocation au sourcing d'urgence", "Confirmer les minimums 2027 auprès des quatre partenaires"] },
+  { id: "absorber", name: "Absorber le pic", desc: (r) => `Augmenter Cankiri et Roubaix, maintenir ${kp(r.horsPanel)} hors-panel sous dérogation.`, effects: [["Service", "96 %", "#3fb27f"], ["Prix rendu", "+2,1 %", "#dfa93f"], ["Hors politique", "4 %", "#e05a5a"], ["Traçabilité", "−4 pts", "#e05a5a"], ["Trajectoire RSE", "dégradée", "#e05a5a"]],
+    actions: (r) => ["Saturer Cankiri A1 et Roubaix G2 jusqu'à la capacité maximale", `Signer une dérogation direction achats pour ${kp(r.horsPanel)} hors panel`, "Lancer un audit express du fournisseur d'urgence sous 30 jours", "Accepter la dégradation de traçabilité sur la saison"] },
+  { id: "compromis", name: "Compromis recommandé", reco: true, desc: (r) => `${kp(Math.max(0, r.uncovered - 50000))} rephasés, 50 kpcs transférés à Roubaix après validation capacité, suppression du hors-panel.`, effects: [["Service", "94 %", "#3fb27f"], ["Prix rendu", "+1,8 %", "#dfa93f"], ["Conformité", "100 %", "#3fb27f"], ["Engagement Asie B", "rattrapé au cycle suivant", "#dfa93f"]],
+    actions: () => ["Réserver la capacité additionnelle chez Roubaix G2", "Rephaser 70 kpcs de Capsule mass market", "Formaliser un plan de rattrapage contractuel avec Fournisseur Asie B", "Maintenir le jalon environnemental d'Izmir D3", "Interdire toute allocation au sourcing d'urgence tant que compliance et traçabilité ne sont pas validées"] },
+];
+
+function KfiReconciliation() {
+  const [kfiStep, setKfiStep] = useState(1);
+  const [forecastScenario, setForecastScenario] = useState("pic");
+  const [forecast, setForecast] = useState(() => kfiClone(KFI_FORECAST_SCENARIOS.find((s) => s.id === "pic")));
+  const [allocation, setAllocation] = useState(() => kfiClone(KFI_DEFAULT_ALLOC.pic));
+  const [derogation, setDerogation] = useState(false);
+  const [catchUp, setCatchUp] = useState({});
+  const [kfiFocus, setKfiFocus] = useState(null);
+  const [kfiArbitration, setKfiArbitration] = useState("compromis");
+  const [kfiValidated, setKfiValidated] = useState(null);
+  const r = useMemo(() => computeKfiReconciliation(KFI_PARTNER_PLANS, forecast, allocation, { derogation, catchUp }), [forecast, allocation, derogation, catchUp]);
+
+  const loadScenario = (id) => {
+    setForecastScenario(id);
+    setForecast(kfiClone(KFI_FORECAST_SCENARIOS.find((s) => s.id === id)));
+    setAllocation(kfiClone(KFI_DEFAULT_ALLOC[id]));
+    setDerogation(false); setCatchUp({}); setKfiValidated(null); setKfiFocus(null);
+  };
+  const setFam = (i, k, v) => { setForecast((f) => ({ ...f, families: f.families.map((row, j) => (j === i ? { ...row, [k]: v } : row)) })); setKfiValidated(null); };
+  const setTotal = (v) => { setForecast((f) => ({ ...f, total: v })); setKfiValidated(null); };
+  const setAlloc = (family, id, v) => { setAllocation((a) => ({ ...a, [family]: { ...(a[family] || {}), [id]: v } })); setKfiValidated(null); };
+  const kNum = (e) => Math.max(0, Math.round((e.target.value === "" ? 0 : +e.target.value) * 1000));
+  const kVal = (n) => Math.round((n || 0) / 1000);
+  const gc = KFI_VERDICT_C[r.globalVerdict];
+  const chainC = r.chainOk ? T.ok : T.bad;
+  const arb = KFI_ARBITRATIONS.find((a) => a.id === kfiArbitration);
+
+  /* Cartes d'engagement : cible 2027 vs projeté après allocation */
+  const engagement = [
+    { k: "prix", label: "Prix", target: `${fr2(r.planCost)} €/pc`, targetTxt: "prix cible business plan", proj: `${fr2(r.projCost)} €/pc`, delta: sp(r.costDeltaPct), v: r.costDeltaPct > 3 ? "Violation" : r.costDeltaPct > 0.5 ? "Sous tension" : "Conforme", carriers: r.costCarriers },
+    { k: "qualite", label: "Qualité", target: pc(KFI_TARGETS.quality, 0), targetTxt: `business plan ${pc(r.planQuality)}`, proj: pc(r.projQuality), delta: `${sg(r.projQuality - KFI_TARGETS.quality, 1)} pt`, v: r.dims[3].verdict, carriers: r.qualityCarriers },
+    { k: "tracabilite", label: "Traçabilité", target: pc(KFI_TARGETS.traceability, 0), targetTxt: `business plan ${pc(r.planTrace)}`, proj: pc(r.projTrace), delta: `${sg(r.projTrace - KFI_TARGETS.traceability, 1)} pt`, v: r.dims[4].verdict, carriers: r.traceCarriers },
+    { k: "conformite", label: "Conformité", target: "100 %", targetTxt: "volume sur partenaires qualifiés", proj: pc(r.complianceShare), delta: `${sg(r.complianceShare - 100, 1)} pt`, v: r.dims[1].verdict, carriers: r.complianceCarriers },
+    { k: "rse", label: "RSE / carbone", target: `${fr2(r.planCarbon)} kg/pc`, targetTxt: "trajectoire business plan", proj: `${fr2(r.projCarbon)} kg/pc`, delta: sp(r.carbonDeltaPct), v: r.dims[2].verdict, carriers: r.carbonCarriers },
+  ];
+  const focusCard = engagement.find((e) => e.k === kfiFocus);
+  const focusIds = focusCard ? new Set(focusCard.carriers.map((c) => c.id)) : null;
+
+  const synth = [
+    { v: `${mp(r.totalForecast)} prévues`, c: T.ink },
+    { v: `${sp(r.planDeltaPct, 0)} vs plan`, c: Math.abs(r.planDeltaPct) > 10 ? T.warn : T.ok },
+    { v: `${pc(r.coverage, 0)} allouées au panel partenaire`, c: r.coverage >= 95 ? T.ok : r.coverage >= 85 ? T.warn : T.bad },
+    { v: `${pc(r.offPolicyPct, 0)} hors politique`, c: r.offPolicy === 0 ? T.ok : derogation && r.offPolicy === r.horsPanel ? T.warn : T.bad },
+    { v: `${kp(r.uncovered)} non couvertes`, c: r.uncovered === 0 ? T.ok : r.uncovered <= r.totalForecast * 0.05 ? T.warn : T.bad },
+  ];
+  const btn = (on, c = T.accent) => ({ cursor: "pointer", background: on ? c : T.panel, color: on ? "#ffffff" : T.ink, border: `1px solid ${on ? c : T.line}`, borderRadius: 9, padding: "8px 13px", fontSize: 12, fontWeight: 800, fontFamily: SANS });
+
+  return (
+    <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18, boxShadow: "0 1px 4px rgba(0,83,160,.06)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <span style={{ width: 34, height: 34, borderRadius: 9, display: "grid", placeItems: "center", background: `${T.accent}12`, border: `1px solid ${T.accent}44` }}><Handshake size={17} color={T.accent} /></span>
+        <div style={{ flex: "1 1 260px" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>Business plan partenaires × prévisions en saison</div>
+          <div style={{ fontSize: 11.5, color: T.faint }}>Temps long industriel (engagements, politique achats, trajectoires RSE) confronté au temps court commercial (prévisions et commandes S1 2027).</div>
+        </div>
+        <VensoTag txt="réconciliation Venso" />
+      </div>
+
+      {/* Bandeau de synthèse permanent */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 13px", marginBottom: 10 }}>
+        {synth.map((s, i) => (
+          <React.Fragment key={s.v}>
+            {i > 0 && <span style={{ color: T.faint, fontFamily: MONO }}>·</span>}
+            <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 800, color: s.c }}>{s.v}</span>
+          </React.Fragment>
+        ))}
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>VERDICT</span><KfiVerdict v={r.globalVerdict} /></span>
+      </div>
+
+      {/* Contrôle de chaîne */}
+      <div style={{ background: `${chainC}10`, border: `1px solid ${chainC}66`, borderRadius: 11, padding: "10px 13px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <ShieldCheck size={14} color={chainC} />
+          <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>Contrôle de chaîne</span>
+          <span style={{ fontSize: 11.5, color: T.sub }}>{r.checks.filter((c) => c.ok).length} / {r.checks.length} règles respectées · verdict global = pire verdict parmi capacité, compliance, RSE, qualité et traçabilité</span>
+          <span style={{ marginLeft: "auto" }}><Chip color={chainC}>{r.chainOk ? "Allocation réconciliée" : "Chaîne incohérente"}</Chip></span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}>
+          {r.checks.map((c) => (
+            <div key={c.id} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, lineHeight: 1.45, color: c.ok ? T.sub : T.ink }}>
+              {c.ok ? <Check size={13} color={T.ok} style={{ flexShrink: 0, marginTop: 2 }} /> : <X size={13} color={T.bad} style={{ flexShrink: 0, marginTop: 2 }} />}
+              <span>{c.ok ? c.label : <><strong style={{ color: T.bad }}>{c.gap}</strong> → {c.action}</>}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Stepper */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 14 }}>
+        {KFI_STEPS.map(([t, sub], i) => {
+          const n = i + 1, on = kfiStep === n, done = kfiStep > n;
+          const c = on ? T.accent : done ? T.ok : T.faint;
+          return (
+            <button key={t} onClick={() => setKfiStep(n)} style={{ cursor: "pointer", textAlign: "left", background: on ? `${T.accent}10` : T.panel, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 11, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10, fontFamily: SANS }}>
+              <span style={{ width: 26, height: 26, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: on || done ? c : "transparent", border: `1.5px solid ${c}`, color: on || done ? "#ffffff" : c, fontFamily: MONO, fontSize: 12, fontWeight: 800 }}>{done ? <Check size={13} /> : n}</span>
+              <span><span style={{ display: "block", fontSize: 12, fontWeight: 800, color: T.ink }}>{t}</span><span style={{ display: "block", fontSize: 10.5, color: T.faint, fontFamily: MONO }}>{sub}</span></span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ---- Étape 1 : business plan & panel cible ---- */}
+      {kfiStep === 1 && (
+        <div>
+          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10 }}>Cinq engagements agrégés du business plan : cible 2027 comparée au niveau projeté après l'allocation en cours. Cliquer sur une carte met en évidence les partenaires qui portent l'écart.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 10, marginBottom: 10 }}>
+            {engagement.map((e) => {
+              const on = kfiFocus === e.k, c = KFI_VERDICT_C[e.v];
+              return (
+                <button key={e.k} onClick={() => setKfiFocus(on ? null : e.k)} style={{ cursor: "pointer", textAlign: "left", background: on ? `${c}10` : T.panel2, border: `1px solid ${on ? c : T.lineSoft}`, borderRadius: 11, padding: "10px 12px", fontFamily: SANS }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{e.label}</span><span style={{ marginLeft: "auto" }}><KfiVerdict v={e.v} /></span></div>
+                  <div style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, marginTop: 6 }}>cible 2027 · {e.target}</div>
+                  <div style={{ fontSize: 10, color: T.faint, fontFamily: MONO }}>{e.targetTxt}</div>
+                  <div style={{ marginTop: 6 }}><span style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: c }}>{e.proj}</span><span style={{ fontFamily: MONO, fontSize: 11, color: c, marginLeft: 6 }}>{e.delta}</span></div>
+                  <div style={{ fontSize: 10.5, color: T.sub, marginTop: 4, whiteSpace: "normal", lineHeight: 1.4 }}>{e.carriers.length ? `porté par ${e.carriers.map((x) => x.txt.split(" (")[0].split(" : ")[0]).slice(0, 2).join(", ")}${e.carriers.length > 2 ? "…" : ""}` : "aucun écart porté par le panel"}</div>
+                </button>
+              );
+            })}
+          </div>
+          {focusCard && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 9, background: `${KFI_VERDICT_C[focusCard.v]}10`, border: `1px solid ${KFI_VERDICT_C[focusCard.v]}55`, borderRadius: 10, padding: "9px 12px", marginBottom: 10, fontSize: 11.5, color: T.ink, lineHeight: 1.5 }}>
+              <Target size={14} color={KFI_VERDICT_C[focusCard.v]} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span><strong>{focusCard.label} — écart {focusCard.delta} vs cible 2027.</strong> {focusCard.carriers.length ? focusCard.carriers.map((x) => x.txt).join(" · ") : "Aucun partenaire ne dégrade cet engagement avec l'allocation en cours."}{focusIds && focusIds.size > 0 && " · partenaires surlignés dans le tableau."}</span>
+            </div>
+          )}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr>{["Partenaire", "Famille", "Engagement plan", "Minimum", "Capacité max.", "Prix cible", "Qualité", "Traçabilité", "RSE / compliance", "Horizon", "Action de développement"].map((h, j) => <th key={h} style={{ ...KFI_TH, textAlign: j >= 2 && j <= 7 ? "right" : "left" }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {r.partners.map((p) => {
+                  const hi = focusIds ? focusIds.has(p.id) : null;
+                  return (
+                    <tr key={p.id} style={{ background: hi ? `${KFI_VERDICT_C[focusCard.v]}12` : "transparent", opacity: hi === false ? 0.45 : 1 }}>
+                      <td style={KFI_TD}><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><span style={{ fontWeight: 800, color: T.accent }}>{p.supplier}</span><GradeChip g={p.grade} /><span style={{ fontSize: 11, fontFamily: MONO, color: T.faint }}>{p.country}</span></span></td>
+                      <td style={{ ...KFI_TD, color: T.sub, whiteSpace: "normal", minWidth: 110 }}>{p.family}</td>
+                      <td style={{ ...KFI_NUM, fontWeight: 800 }}>{u(p.plannedVolume)} pcs</td>
+                      <td style={KFI_NUM}>{u(p.minCommitment)} pcs</td>
+                      <td style={KFI_NUM}>{u(p.maxCapacity)} pcs</td>
+                      <td style={KFI_NUM}>{fr2(p.targetCost)} €/pc</td>
+                      <td style={KFI_NUM}>≥ {pc(p.qualityTarget, 0)}</td>
+                      <td style={{ ...KFI_NUM, color: p.traceability < 90 ? T.warn : T.ink }}>{pc(p.traceability, 0)}</td>
+                      <td style={{ ...KFI_TD, whiteSpace: "normal", minWidth: 150 }}><span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}><Chip color={p.rseInProgress ? T.warn : T.ok}>{p.rseStatus}</Chip><Chip color={p.complianceWatch ? T.warn : T.ok}>{p.complianceStatus}</Chip></span></td>
+                      <td style={{ ...KFI_TD, fontFamily: MONO, color: T.sub }}>{p.partnershipHorizon}</td>
+                      <td style={{ ...KFI_TD, whiteSpace: "normal", minWidth: 200, color: T.sub, fontSize: 11.5 }}>{p.developmentAction}</td>
+                    </tr>
+                  );
+                })}
+                <tr>
+                  <td style={{ ...KFI_TD, fontWeight: 800 }} colSpan={2}>Panel cible S1 2027</td>
+                  <td style={{ ...KFI_NUM, fontWeight: 800 }}>{u(kfiSum(r.partners, (p) => p.plannedVolume))} pcs</td>
+                  <td style={KFI_NUM}>{u(kfiSum(r.partners, (p) => p.minCommitment))} pcs</td>
+                  <td style={KFI_NUM}>{u(kfiSum(r.partners, (p) => p.maxCapacity))} pcs</td>
+                  <td style={KFI_NUM}>{fr2(r.planCost)} €/pc</td>
+                  <td style={KFI_NUM}>{pc(r.planQuality)}</td>
+                  <td style={KFI_NUM}>{pc(r.planTrace)}</td>
+                  <td style={{ ...KFI_TD, color: T.sub }} colSpan={3}>{fr2(r.planCarbon)} kg CO₂e/pc · trajectoire de référence</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 12 }}><button onClick={() => setKfiStep(2)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}>Confronter aux prévisions reçues <ArrowRight size={14} /></button></div>
+        </div>
+      )}
+
+      {/* ---- Étape 2 : prévisions reçues ---- */}
+      {kfiStep === 2 && (
+        <div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            {KFI_FORECAST_SCENARIOS.map((s) => {
+              const on = forecastScenario === s.id, d = ((s.total - r.totalPlan) / (r.totalPlan || 1)) * 100;
+              return (
+                <button key={s.id} onClick={() => loadScenario(s.id)} style={{ ...btn(on), textAlign: "left", display: "flex", flexDirection: "column", gap: 2, minWidth: 150 }}>
+                  <span>{s.name}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, opacity: 0.85 }}>{mp(s.total)} · {sp(d, 0)}</span>
+                </button>
+              );
+            })}
+            <button onClick={() => loadScenario(forecastScenario)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS, alignSelf: "center" }}><RotateCcw size={12} /> Revenir aux données fictives</button>
+          </div>
+          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10 }}>Lecture métier : <strong style={{ color: T.ink }}>{KFI_FORECAST_SCENARIOS.find((s) => s.id === forecastScenario).note}</strong>. Prévision et commande ferme modifiables (en kpcs) ; la somme des familles doit égaler le volume du scénario.</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr>{["Famille", "Plan", "Dernière prévision", "Variation", "Délai demandé", "Confiance", "Commande ferme", "Ferme / prévision"].map((h, j) => <th key={h} style={{ ...KFI_TH, textAlign: j === 0 || j === 4 || j === 5 ? "left" : "right" }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {forecast.families.map((f, i) => {
+                  const d = f.plan ? ((f.forecast - f.plan) / f.plan) * 100 : 0, firmBad = f.firm > f.forecast;
+                  return (
+                    <tr key={f.family}>
+                      <td style={{ ...KFI_TD, fontWeight: 800 }}>{f.family}</td>
+                      <td style={KFI_NUM}>{kp(f.plan)}</td>
+                      <td style={KFI_NUM}><input type="number" step={10} min={0} value={kVal(f.forecast)} onChange={(e) => setFam(i, "forecast", kNum(e))} style={KFI_INPUT} /> <span style={{ fontSize: 10, color: T.faint }}>kpcs</span></td>
+                      <td style={{ ...KFI_NUM, fontWeight: 800, color: Math.abs(d) > 15 ? T.bad : Math.abs(d) > 5 ? T.warn : T.ok }}>{sp(d, 0)}</td>
+                      <td style={{ ...KFI_TD, fontFamily: MONO, color: T.sub }}>{f.lead}</td>
+                      <td style={KFI_TD}><Chip color={KFI_CONF_C[f.confidence]}>{f.confidence}</Chip></td>
+                      <td style={KFI_NUM}><input type="number" step={10} min={0} value={kVal(f.firm)} onChange={(e) => setFam(i, "firm", kNum(e))} style={{ ...KFI_INPUT, borderColor: firmBad ? T.bad : T.line }} /> <span style={{ fontSize: 10, color: T.faint }}>kpcs</span></td>
+                      <td style={{ ...KFI_NUM, color: firmBad ? T.bad : T.sub }}>{f.forecast ? pc((f.firm / f.forecast) * 100, 0) : "—"}</td>
+                    </tr>
+                  );
+                })}
+                <tr>
+                  <td style={{ ...KFI_TD, fontWeight: 800 }}>Total familles</td>
+                  <td style={{ ...KFI_NUM, fontWeight: 800 }}>{kp(r.totalPlan)}</td>
+                  <td style={{ ...KFI_NUM, fontWeight: 800, color: r.totalForecast === forecast.total ? T.ink : T.bad }}>{kp(r.totalForecast)}</td>
+                  <td style={{ ...KFI_NUM, fontWeight: 800 }}>{sp(r.planDeltaPct, 0)}</td>
+                  <td style={KFI_TD} colSpan={2}></td>
+                  <td style={{ ...KFI_NUM, fontWeight: 800 }}>{kp(r.totalFirm)}</td>
+                  <td style={KFI_NUM}>{r.totalForecast ? pc((r.totalFirm / r.totalForecast) * 100, 0) : "—"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 12, background: `${T.human}12`, border: `1px solid ${T.human}44`, borderRadius: 10, padding: "9px 12px" }}>
+            <Sparkles size={14} color={T.human} />
+            <span style={{ fontSize: 11.5, color: T.ink }}>Volume du scénario <input type="number" step={10} min={0} value={kVal(forecast.total)} onChange={(e) => setTotal(kNum(e))} style={{ ...KFI_INPUT, width: 84 }} /> kpcs · somme des familles <strong style={{ fontFamily: MONO }}>{kp(r.totalForecast)}</strong> — {r.totalForecast === forecast.total ? "cohérent avec le scénario." : `écart de ${sg((r.totalForecast - forecast.total) / 1000, 0)} kpcs à réconcilier.`}</span>
+            <span style={{ marginLeft: "auto" }}><Chip color={r.totalForecast === forecast.total ? T.ok : T.bad}>{r.totalForecast === forecast.total ? "Somme cohérente" : "À corriger"}</Chip></span>
+          </div>
+          <div style={{ marginTop: 12 }}><button onClick={() => setKfiStep(3)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}>Confronter au panel partenaire <ArrowRight size={14} /></button></div>
+        </div>
+      )}
+
+      {/* ---- Étape 3 : confrontation & allocation ---- */}
+      {kfiStep === 3 && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+            <Layers size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Matrice prévisions ↔ partenaires</span>
+            <span style={{ fontSize: 11.5, color: T.faint }}>allocation par famille et par voie, en kpcs · non couvert = prévision − allocations</span>
+            <button onClick={() => loadScenario(forecastScenario)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}><RotateCcw size={12} /> Revenir aux données fictives</button>
+          </div>
+          <div style={{ overflowX: "auto", marginTop: 8 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr>
+                <th style={KFI_TH}>Famille</th><th style={{ ...KFI_TH, textAlign: "right" }}>Prévision</th>
+                {r.partners.map((p) => <th key={p.id} style={{ ...KFI_TH, textAlign: "right" }}>{p.supplier}</th>)}
+                <th style={{ ...KFI_TH, textAlign: "right", color: T.bad }}>Hors panel</th><th style={{ ...KFI_TH, textAlign: "right" }}>Non couvert</th>
+              </tr></thead>
+              <tbody>
+                {r.families.map((f) => (
+                  <tr key={f.family}>
+                    <td style={{ ...KFI_TD, fontWeight: 800 }}>{f.family}</td>
+                    <td style={{ ...KFI_NUM, fontWeight: 800 }}>{kp(f.forecast)}</td>
+                    {[...r.partners.map((p) => p.id), KFI_HORS].map((id) => (
+                      <td key={id} style={KFI_NUM}><input type="number" step={10} min={0} value={kVal((allocation[f.family] || {})[id])} onChange={(e) => setAlloc(f.family, id, kNum(e))} style={{ ...KFI_INPUT, borderColor: id === KFI_HORS && (allocation[f.family] || {})[id] > 0 ? (derogation ? T.warn : T.bad) : T.line }} /></td>
+                    ))}
+                    <td style={{ ...KFI_NUM, fontWeight: 800, color: f.uncovered < 0 ? T.bad : f.uncovered > 0 ? T.warn : T.ok }}>{f.uncovered < 0 ? `${sg(f.uncovered / 1000, 0)} kpcs` : kp(f.uncovered)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: T.panel2 }}>
+                  <td style={{ ...KFI_TD, fontWeight: 800 }}>Total alloué</td>
+                  <td style={{ ...KFI_NUM, fontWeight: 800 }}>{kp(r.totalForecast)}</td>
+                  {r.partners.map((p) => <td key={p.id} style={{ ...KFI_NUM, fontWeight: 800, color: KFI_VERDICT_C[p.verdict] }}>{kp(p.alloc)}</td>)}
+                  <td style={{ ...KFI_NUM, fontWeight: 800, color: KFI_VERDICT_C[r.horsVerdict] }}>{kp(r.horsPanel)}</td>
+                  <td style={{ ...KFI_NUM, fontWeight: 800, color: r.overAllocated > 0 ? T.bad : r.uncovered > 0 ? T.warn : T.ok }}>{r.overAllocated > 0 ? `${sg(-r.overAllocated / 1000, 0)} kpcs` : kp(r.uncovered)}</td>
+                </tr>
+                <tr>
+                  <td style={{ ...KFI_TD, color: T.faint, fontSize: 10.5 }} colSpan={2}>min. contractuel · capacité max.</td>
+                  {r.partners.map((p) => <td key={p.id} style={{ ...KFI_NUM, color: T.faint, fontSize: 10.5 }}>{kVal(p.minCommitment)} · {kVal(p.maxCapacity)}</td>)}
+                  <td style={{ ...KFI_NUM, color: T.faint, fontSize: 10.5 }}>0 attendu</td><td style={{ ...KFI_NUM, color: T.faint, fontSize: 10.5 }}>arbitrage</td>
+                </tr>
+                <tr>
+                  <td style={{ ...KFI_TD, color: T.faint, fontSize: 10.5 }} colSpan={2}>verdict</td>
+                  {r.partners.map((p) => <td key={p.id} style={{ ...KFI_TD, textAlign: "right" }}><KfiVerdict v={p.verdict} /></td>)}
+                  <td style={{ ...KFI_TD, textAlign: "right" }}><KfiVerdict v={r.horsVerdict} /></td>
+                  <td style={{ ...KFI_TD, textAlign: "right" }}><Chip color={r.overAllocated > 0 ? T.bad : r.uncovered > 0 ? T.warn : T.ok}>{r.overAllocated > 0 ? "Sur-allocation" : r.uncovered > 0 ? "Arbitrage requis" : "Couvert"}</Chip></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Politiques : dérogation et plans de rattrapage */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+            <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, letterSpacing: 0.6, textTransform: "uppercase" }}>Politiques</span>
+            <KfiToggle on={derogation} onClick={() => { setDerogation((d) => !d); setKfiValidated(null); }}>Dérogation direction achats pour le hors-panel ({kp(r.horsPanel)})</KfiToggle>
+            {r.partners.filter((p) => p.shortfall).map((p) => (
+              <KfiToggle key={p.id} on={!!catchUp[p.id]} onClick={() => { setCatchUp((m) => ({ ...m, [p.id]: !m[p.id] })); setKfiValidated(null); }}>Plan de rattrapage contractuel — {p.supplier} ({sg(p.minGap / 1000, 0)} kpcs)</KfiToggle>
+            ))}
+          </div>
+
+          {/* Tensions par voie */}
+          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, margin: "16px 0 3px" }}>Tensions par voie d'allocation</div>
+          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10 }}>Conforme = capacité, minimum contractuel et politiques respectés · Sous tension = marge de capacité &lt; 10 %, engagement sous-réalisé ou objectif qualité/traçabilité dégradé · Violation = hors panel, compliance non validée, capacité dépassée ou politique RSE non respectée.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 9 }}>
+            {[...r.partners.map((p) => ({ id: p.id, name: p.supplier, grade: p.grade, alloc: p.alloc, verdict: p.verdict, text: p.text, issues: p.issues })),
+              { id: KFI_HORS, name: "Hors panel — sourcing urgence", alloc: r.horsPanel, verdict: r.horsVerdict, text: r.horsText, issues: [] },
+              { id: "uncovered", name: "Non couvert", alloc: r.uncovered, verdict: r.overAllocated > 0 ? "Violation" : r.uncovered > 0 ? "Sous tension" : "Conforme", text: r.overAllocated > 0 ? `Sur-allocation de ${kp(r.overAllocated)} : allocations supérieures à la prévision` : r.uncovered > 0 ? "Arbitrage requis : rephaser, transférer ou renoncer" : "Prévision intégralement couverte", issues: [] },
+            ].map((v) => {
+              const c = KFI_VERDICT_C[v.verdict];
+              return (
+                <div key={v.id} style={{ background: T.panel, border: `1px solid ${c}55`, borderRadius: 11, padding: "10px 13px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 99, background: c, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: T.accent }}>{v.name}</span>{v.grade && <GradeChip g={v.grade} />}
+                    <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 800, color: T.ink }}>{kp(v.alloc)}</span>
+                    <span style={{ marginLeft: "auto" }}><KfiVerdict v={v.verdict} /></span>
+                  </div>
+                  <div style={{ fontSize: 11, color: T.sub, fontFamily: MONO, marginTop: 5, lineHeight: 1.45 }}>{v.text}</div>
+                  {v.issues.length > 0 && <div style={{ fontSize: 10.5, color: c, marginTop: 4, lineHeight: 1.45 }}>{v.issues.join(" · ")}</div>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Impact sur la trajectoire */}
+          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, margin: "16px 0 3px" }}>Impact sur la trajectoire</div>
+          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10 }}>Chaque écart projeté est relié à sa cause dans l'allocation en cours.</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr>{["Dimension", "Projeté", "Cible", "Écart", "Verdict", "Cause"].map((h, j) => <th key={h} style={{ ...KFI_TH, textAlign: j >= 1 && j <= 3 ? "right" : "left" }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {[
+                  { l: "Prix rendu", proj: `${fr2(r.projCost)} €/pc`, target: `${fr2(r.planCost)} €/pc`, delta: sp(r.costDeltaPct), v: engagement[0].v, why: r.costCarriers.length ? r.costCarriers.map((c) => c.txt).join(" · ") : "mix identique au business plan" },
+                  { l: "Qualité projetée", proj: pc(r.projQuality), target: pc(KFI_TARGETS.quality, 0), delta: `${sg(r.projQuality - KFI_TARGETS.quality, 1)} pt`, v: r.dims[3].verdict, why: r.qualityCarriers.length ? r.qualityCarriers.map((c) => c.txt).join(" · ") : "tous les partenaires alloués tiennent la cible" },
+                  { l: "Traçabilité", proj: pc(r.projTrace), target: pc(KFI_TARGETS.traceability, 0), delta: `${sg(r.projTrace - KFI_TARGETS.traceability, 1)} pt`, v: r.dims[4].verdict, why: r.traceCarriers.length ? r.traceCarriers.map((c) => c.txt).join(" · ") : "traçabilité complète sur le volume alloué" },
+                  { l: "Couverture partenaires", proj: pc(r.coverage, 0), target: "100 %", delta: `${sg(r.coverage - 100, 0)} pt`, v: r.coverage >= 95 ? "Conforme" : r.coverage >= 85 ? "Sous tension" : "Violation", why: `${kp(r.uncovered)} non couvertes${r.horsPanel > 0 ? ` · ${kp(r.horsPanel)} hors panel` : ""}${r.overAllocated > 0 ? ` · ${kp(r.overAllocated)} sur-alloués` : ""}` },
+                  { l: "Carbone", proj: `${fr2(r.projCarbon)} kg/pc`, target: `${fr2(r.planCarbon)} kg/pc`, delta: `${sp(r.carbonDeltaPct)} vs trajectoire`, v: r.dims[2].verdict, why: r.carbonCarriers.length ? r.carbonCarriers.map((c) => c.txt).join(" · ") : "mix carbone conforme à la trajectoire" },
+                ].map((x) => (
+                  <tr key={x.l}>
+                    <td style={{ ...KFI_TD, fontWeight: 800 }}>{x.l}</td>
+                    <td style={{ ...KFI_NUM, fontWeight: 800, color: KFI_VERDICT_C[x.v] }}>{x.proj}</td>
+                    <td style={KFI_NUM}>{x.target}</td>
+                    <td style={{ ...KFI_NUM, color: KFI_VERDICT_C[x.v] }}>{x.delta}</td>
+                    <td style={KFI_TD}><KfiVerdict v={x.v} /></td>
+                    <td style={{ ...KFI_TD, whiteSpace: "normal", minWidth: 260, color: T.sub, fontSize: 11.5, lineHeight: 1.45 }}>{x.why}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+            <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, letterSpacing: 0.6, textTransform: "uppercase" }}>Verdict global</span>
+            {r.dims.map((d) => <span key={d.k} title={d.why} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: T.sub }}>{d.label} <KfiVerdict v={d.verdict} /></span>)}
+            <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 800, color: gc }}>= <KfiVerdict v={r.globalVerdict} /></span>
+          </div>
+          <div style={{ marginTop: 12 }}><button onClick={() => setKfiStep(4)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}>Passer à l'arbitrage KFI <ArrowRight size={14} /></button></div>
+        </div>
+      )}
+
+      {/* ---- Étape 4 : arbitrage KFI ---- */}
+      {kfiStep === 4 && (
+        <div>
+          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10 }}>Trois options pour absorber {kp(r.uncovered)} non couvertes{r.horsPanel > 0 ? ` et ${kp(r.horsPanel)} hors panel` : ""} sans dégrader silencieusement les engagements de long terme. Chaîne actuelle : <strong style={{ color: chainC }}>{r.chainOk ? "réconciliée" : "incohérente"}</strong> · verdict <strong style={{ color: gc }}>{r.globalVerdict}</strong>.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 12 }}>
+            {KFI_ARBITRATIONS.map((a) => {
+              const on = kfiArbitration === a.id, c = a.reco ? T.ok : T.accent;
+              return (
+                <div key={a.id} style={{ background: T.panel, border: `1px solid ${on ? c : T.line}`, borderRadius: 12, padding: "14px 15px", display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{a.name}</span>
+                    {a.reco && <span style={{ marginLeft: "auto" }}><Chip color={T.ok}>recommandé</Chip></span>}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: T.sub, lineHeight: 1.45, marginBottom: 10 }}>{a.desc(r)}</div>
+                  {a.effects.map(([l2, v, c2]) => (
+                    <div key={l2} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "4px 0", borderBottom: `1px solid ${T.lineSoft}` }}>
+                      <span style={{ fontSize: 11.5, color: T.sub }}>{l2}</span><span style={{ fontSize: 12, fontFamily: MONO, fontWeight: 800, color: c2, textAlign: "right" }}>{v}</span>
+                    </div>
+                  ))}
+                  <button onClick={() => { setKfiArbitration(a.id); setKfiValidated(null); }} style={{ marginTop: 12, cursor: "pointer", background: on ? c : `${T.human}12`, color: on ? "#ffffff" : T.human, border: "none", borderRadius: 9, padding: "9px 12px", fontSize: 12, fontWeight: 800, fontFamily: SANS }}>{on ? "Option retenue ✓" : "Retenir cette option"}</button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop: 14, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px" }}>
+            <span style={{ display: "block", fontSize: 10, color: T.faint, fontFamily: MONO, letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 8 }}>Actions associées — {arb.name}</span>
+            {arb.actions(r).map((a) => (
+              <div key={a} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: T.ink, lineHeight: 1.45, marginBottom: 5 }}>
+                <Check size={13} color={arb.reco ? T.ok : T.accent} style={{ flexShrink: 0, marginTop: 1 }} />{a}
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderTop: `1px solid ${T.lineSoft}`, paddingTop: 12, marginTop: 8 }}>
+              <span style={{ fontSize: 11.5, color: T.sub }}>Justification : {r.chainOk ? "chaîne réconciliée, l'arbitrage protège les engagements partenaires." : `chaîne incohérente (${r.checks.filter((c) => !c.ok).length} règle${r.checks.filter((c) => !c.ok).length > 1 ? "s" : ""} en écart), l'arbitrage doit s'accompagner des mesures correctives.`}</span>
+              <button onClick={() => setKfiValidated({ at: new Date(), option: arb.name, scenario: KFI_FORECAST_SCENARIOS.find((s) => s.id === forecastScenario).name, verdict: r.globalVerdict, chainOk: r.chainOk, total: r.totalForecast, panel: r.panelAllocated, uncovered: r.uncovered, hors: r.horsPanel })} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: kfiValidated ? T.ok : T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "10px 17px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}>
+                <Check size={14} /> {kfiValidated ? "Arbitrage validé ✓" : "Valider l'arbitrage KFI"}
+              </button>
+            </div>
+          </div>
+          {kfiValidated && (
+            <div style={{ marginTop: 12, display: "flex", alignItems: "flex-start", gap: 10, background: `${T.ok}14`, border: `1px solid ${T.ok}66`, borderRadius: 11, padding: "11px 14px" }}>
+              <BadgeCheck size={16} color={T.ok} style={{ flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontSize: 12, color: T.ink, lineHeight: 1.55 }}>
+                <strong>Arbitrage KFI validé le {kfiValidated.at.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} à {kfiValidated.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong> — option « {kfiValidated.option} » · scénario {kfiValidated.scenario} · {mp(kfiValidated.total)} prévues · {kp(kfiValidated.panel)} sur le panel partenaire · {kp(kfiValidated.uncovered)} à rephaser · {kp(kfiValidated.hors)} hors panel · verdict {kfiValidated.verdict} · chaîne {kfiValidated.chainOk ? "réconciliée" : "à corriger"}.
+                <div style={{ fontSize: 11, color: T.faint, marginTop: 3 }}>Démonstration sans persistance : transmis aux décisions à prendre et au panel fournisseurs ci-dessous. <span onClick={() => setKfiValidated(null)} style={{ color: T.blue, fontWeight: 700, cursor: "pointer" }}>Rouvrir l'arbitrage</span></div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProductionPage({ st }) {
   const [lever, setLever] = useState("carbone");
   const [chosen, setChosen] = useState({});
@@ -1373,7 +1990,7 @@ function ProductionPage({ st }) {
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: T.ink }}>Production Panel</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 12.5, color: T.sub }}>Performance du panel fournisseurs, allocation des collections et anticipation — en continu.</p>
+          <p style={{ margin: "4px 0 0", fontSize: 12.5, color: T.sub }}>Performance du panel fournisseurs, réconciliation business plan partenaires × prévisions en saison, allocation des collections et anticipation — en continu.</p>
         </div>
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: MONO, fontSize: 11, color: T.sub, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 999, padding: "6px 13px" }}>
           <span style={{ width: 7, height: 7, borderRadius: 99, background: "#00a3c4" }} /> données terrain en continu · <span style={{ color: T.blue, fontWeight: 700 }}>Venso</span>
@@ -1411,6 +2028,9 @@ function ProductionPage({ st }) {
           </div>
         ))}
       </div>
+
+      {/* ---- Business plan partenaires × prévisions en saison ---- */}
+      <KfiReconciliation />
 
       {/* ---- Agir maintenant / Décisions à prendre ---- */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 16, marginBottom: 18 }}>
@@ -1615,7 +2235,7 @@ const CASCADE_SCOPE = {
   "Offre & Collection": "PVI, marge, volumes et empreinte produit",
   "Go to Market": "scénarios de prix, volume et sourcing",
   "Supply": "coût rendu, capacité et risque fournisseur",
-  "KFI": "allocation industrielle et trajectoire panel",
+  "KFI": "allocation industrielle, trajectoire panel et respect des engagements partenaires",
 };
 const SIM_SCEN = [
   { id: "actuel", name: "Trajectoire actuelle", ca: 43.8, co2: 5376, marge: 55, note: "Plan de collection inchangé" },
