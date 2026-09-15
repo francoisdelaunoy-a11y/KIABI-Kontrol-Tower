@@ -1884,7 +1884,7 @@ function KfiReconciliation() {
                     <span style={{ marginLeft: "auto" }}><KfiVerdict v={v.verdict} /></span>
                   </div>
                   <div style={{ fontSize: 11, color: T.sub, fontFamily: MONO, marginTop: 5, lineHeight: 1.45 }}>{v.text}</div>
-                  {v.issues.length > 0 && <div style={{ fontSize: 10.5, color: c, marginTop: 4, lineHeight: 1.45 }}>{v.issues.join(" · ")}</div>}
+                  {v.issues.filter((i) => !i.startsWith("marge de capacité")).length > 0 && <div style={{ fontSize: 10.5, color: c, marginTop: 4, lineHeight: 1.45 }}>{v.issues.filter((i) => !i.startsWith("marge de capacité")).join(" · ")}</div>}
                 </div>
               );
             })}
