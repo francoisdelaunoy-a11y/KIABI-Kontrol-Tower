@@ -1509,10 +1509,11 @@ function computeKfiReconciliation(plans, forecast, allocation, policy = {}) {
   const shareA = (s) => (allocated ? s.alloc / allocated : 0);
   const shareP = (s) => (s.plannedVolume || 0) / planVol;
   const label = (s) => (s.id === KFI_HORS ? "sourcing d'urgence" : s.supplier);
-  const de = (name) => (/^[aeiouyâêîôûéèh]/i.test(name) ? `d'${name}` : `de ${name}`);
+  const de = (name) => (name.startsWith("Fournisseur ") ? `du ${name}` : /^[aeiouyâêîôûéèh]/i.test(name) ? `d'${name}` : `de ${name}`);
+  const mixWord = (s) => { const d = shareA(s) - shareP(s); return d > 0 && s.planGap > 0 ? `montée ${de(label(s))} (${sg(s.planGap / 1000, 0)} kpcs` : d > 0 ? `part ${de(label(s))} en hausse (${pc(shareP(s) * 100)} → ${pc(shareA(s) * 100)}` : `recul ${de(label(s))} (${sg(s.planGap / 1000, 0)} kpcs`; };
   const costCarriers = sources.map((s) => ({ id: s.id, name: label(s), impact: (shareA(s) - shareP(s)) * (s.targetCost - planCost) + (allocated ? (KFI_TARGETS.flexPremium * (s.overPlan || 0) * s.targetCost) / allocated : 0), s }))
     .filter((c) => c.impact > 0.004).sort((a, b) => b.impact - a.impact)
-    .map((c) => ({ id: c.id, txt: `${c.s.id === KFI_HORS ? `${c.name} (${kp(c.s.alloc)} à ${fr2(c.s.targetCost)} €)` : c.s.planGap < 0 ? `recul ${de(c.name)} (${sg(c.s.planGap / 1000, 0)} kpcs à ${fr2(c.s.targetCost)} €)` : `montée ${de(c.name)} (${sg(c.s.planGap / 1000, 0)} kpcs à ${fr2(c.s.targetCost)} €${c.s.overPlan > 0 ? ", surcoût de flexibilité" : ""})`} : ${sg(c.impact, 2)} €/pc` }));
+    .map((c) => ({ id: c.id, txt: `${c.s.id === KFI_HORS ? `${label(c.s)} (${kp(c.s.alloc)} à ${fr2(c.s.targetCost)} €)` : `${mixWord(c.s)} à ${fr2(c.s.targetCost)} €${c.s.overPlan > 0 ? ", surcoût de flexibilité" : ""})`} : ${sg(c.impact, 2)} €/pc` }));
   const gapCarriers = (k, target, unit) => sources.filter((s) => s.alloc > 0 && s[k] < target)
     .map((s) => ({ id: s.id, pts: (s.alloc * (target - s[k])) / (allocated || 1), s })).sort((a, b) => b.pts - a.pts)
     .map((c) => ({ id: c.id, txt: `${label(c.s)} (${pc(c.s[k], 0)}, ${kp(c.s.alloc)}) : ${sg(-c.pts, 1)} ${unit}` }));
@@ -1521,7 +1522,7 @@ function computeKfiReconciliation(plans, forecast, allocation, policy = {}) {
   const complianceCarriers = sources.filter((s) => s.alloc > 0 && (!s.complianceValidated || s.complianceWatch)).map((s) => ({ id: s.id, txt: s.complianceValidated ? `${label(s)} : ${s.complianceStatus} (${kp(s.alloc)})` : `${label(s)} : ${kp(s.alloc)} non qualifiés${derogation ? " sous dérogation" : ""}` }));
   const carbonCarriers = sources.map((s) => ({ id: s.id, impact: (shareA(s) - shareP(s)) * (s.carbon - planCarbon) + (allocated ? (KFI_TARGETS.carbonRushFactor * (s.overPlan || 0) * s.carbon) / allocated : 0), s }))
     .filter((c) => c.impact > 0.004).sort((a, b) => b.impact - a.impact)
-    .map((c) => ({ id: c.id, txt: `${c.s.id === KFI_HORS ? `${label(c.s)} en aérien (${fr2(c.s.carbon)} kg/pc)` : c.s.overPlan > 0 ? `flux accéléré sur ${kp(c.s.overPlan)} au-dessus du plan chez ${label(c.s)}` : `montée ${de(label(c.s))} (${fr2(c.s.carbon)} kg/pc)`} : ${sg((c.impact / (planCarbon || 1)) * 100, 1)} %` }));
+    .map((c) => ({ id: c.id, txt: `${c.s.id === KFI_HORS ? `${label(c.s)} en aérien (${fr2(c.s.carbon)} kg/pc)` : c.s.overPlan > 0 ? `flux accéléré sur ${kp(c.s.overPlan)} au-dessus du plan chez ${label(c.s)}` : `${mixWord(c.s)} à ${fr2(c.s.carbon)} kg/pc)`} : ${sg((c.impact / (planCarbon || 1)) * 100, 1)} %` }));
   partners.forEach((p) => { if (p.rseInProgress && p.nearCapacity) carbonCarriers.push({ id: p.id, txt: `${p.supplier} saturé : jalon environnemental C→B à protéger` }); });
 
   /* --- verdicts par dimension : le global est le pire --- */
@@ -1533,9 +1534,9 @@ function computeKfiReconciliation(plans, forecast, allocation, policy = {}) {
   const dims = [
     { k: "capacite", label: "Capacité", verdict: capaV, why: capaV === "Conforme" ? "capacités et minimums respectés" : partners.filter((p) => p.overload > 0 || p.nearCapacity || p.shortfall).map((p) => `${p.supplier} : ${p.issues[0]}`).join(" · ") },
     { k: "compliance", label: "Compliance", verdict: compV, why: compV === "Conforme" ? "100 % du volume sur partenaires qualifiés" : complianceCarriers.map((c) => c.txt).join(" · ") },
-    { k: "rse", label: "RSE / carbone", verdict: rseV, why: rseV === "Conforme" ? "trajectoire carbone tenue" : `carbone ${sp(carbonDeltaPct)} vs trajectoire · ${carbonCarriers.map((c) => c.txt).join(" · ")}` },
-    { k: "qualite", label: "Qualité", verdict: qualV, why: qualV === "Conforme" ? `qualité projetée ${pc(projQuality)} ≥ cible` : `qualité projetée ${pc(projQuality)} vs cible ${pc(KFI_TARGETS.quality, 0)} · ${qualityCarriers.map((c) => c.txt).join(" · ")}` },
-    { k: "tracabilite", label: "Traçabilité", verdict: traceV, why: traceV === "Conforme" ? `traçabilité projetée ${pc(projTrace)} ≥ cible` : `traçabilité projetée ${pc(projTrace)} vs cible ${pc(KFI_TARGETS.traceability, 0)} · ${traceCarriers.map((c) => c.txt).join(" · ")}` },
+    { k: "rse", label: "RSE / carbone", verdict: rseV, why: rseV === "Conforme" ? "trajectoire carbone tenue" : `carbone ${sp(carbonDeltaPct)} vs trajectoire${carbonCarriers.length ? " · " + carbonCarriers.map((c) => c.txt).join(" · ") : ""}` },
+    { k: "qualite", label: "Qualité", verdict: qualV, why: qualV === "Conforme" ? `qualité projetée ${pc(projQuality)} ≥ cible` : `qualité projetée ${pc(projQuality)} vs cible ${pc(KFI_TARGETS.quality, 0)}${qualityCarriers.length ? " · " + qualityCarriers.map((c) => c.txt).join(" · ") : " · aucun volume alloué, projection = business plan"}` },
+    { k: "tracabilite", label: "Traçabilité", verdict: traceV, why: traceV === "Conforme" ? `traçabilité projetée ${pc(projTrace)} ≥ cible` : `traçabilité projetée ${pc(projTrace)} vs cible ${pc(KFI_TARGETS.traceability, 0)}${traceCarriers.length ? " · " + traceCarriers.map((c) => c.txt).join(" · ") : " · aucun volume alloué, projection = business plan"}` },
   ];
   const globalVerdict = kfiWorst(capaV, compV, rseV, qualV, traceV, horsVerdict);
 
@@ -1581,8 +1582,8 @@ const KfiToggle = ({ on, onClick, children }) => (
   </button>
 );
 const KFI_ARBITRATIONS = [
-  { id: "proteger", name: "Protéger le business plan", desc: (r) => `Respecter les minimums partenaires, phaser ${kp(r.uncovered + r.horsPanel)} sur quatre semaines, aucun hors-panel.`, effects: [["Couverture", "100 %", "#3fb27f"], ["Délai", "+12 j", "#dfa93f"], ["Prix rendu", "+1,4 %", "#dfa93f"], ["Hors politique", "0 %", "#3fb27f"], ["Trajectoire RSE", "préservée", "#3fb27f"]],
-    actions: (r) => [`Phaser ${kp(r.uncovered + r.horsPanel)} sur quatre semaines avec le commerce`, "Remonter Fournisseur Asie B à son engagement contractuel", "Refuser toute allocation au sourcing d'urgence", "Confirmer les minimums 2027 auprès des quatre partenaires"] },
+  { id: "proteger", name: "Protéger le business plan", desc: (r) => `Respecter les minimums partenaires, phaser ${kp(r.uncovered)} sur quatre semaines, aucun hors-panel${r.horsPanel > 0 ? ` (${kp(r.horsPanel)} réaffectés aux partenaires sous engagement)` : ""}.`, effects: [["Couverture", "100 %", "#3fb27f"], ["Délai", "+12 j", "#dfa93f"], ["Prix rendu", "+1,4 %", "#dfa93f"], ["Hors politique", "0 %", "#3fb27f"], ["Trajectoire RSE", "préservée", "#3fb27f"]],
+    actions: (r) => [`Phaser ${kp(r.uncovered)} sur quatre semaines avec le commerce`, `Remonter les partenaires sous engagement à leur minimum contractuel${r.horsPanel > 0 ? ` en y réaffectant les ${kp(r.horsPanel)} hors panel` : ""}`, "Refuser toute allocation au sourcing d'urgence", "Confirmer les minimums 2027 auprès des quatre partenaires"] },
   { id: "absorber", name: "Absorber le pic", desc: (r) => `Augmenter Cankiri et Roubaix, maintenir ${kp(r.horsPanel)} hors-panel sous dérogation.`, effects: [["Service", "96 %", "#3fb27f"], ["Prix rendu", "+2,1 %", "#dfa93f"], ["Hors politique", "4 %", "#e05a5a"], ["Traçabilité", "−4 pts", "#e05a5a"], ["Trajectoire RSE", "dégradée", "#e05a5a"]],
     actions: (r) => ["Saturer Cankiri A1 et Roubaix G2 jusqu'à la capacité maximale", `Signer une dérogation direction achats pour ${kp(r.horsPanel)} hors panel`, "Lancer un audit express du fournisseur d'urgence sous 30 jours", "Accepter la dégradation de traçabilité sur la saison"] },
   { id: "compromis", name: "Compromis recommandé", reco: true, desc: (r) => `${kp(Math.max(0, r.uncovered - 50000))} rephasés, 50 kpcs transférés à Roubaix après validation capacité, suppression du hors-panel.`, effects: [["Service", "94 %", "#3fb27f"], ["Prix rendu", "+1,8 %", "#dfa93f"], ["Conformité", "100 %", "#3fb27f"], ["Engagement Asie B", "rattrapé au cycle suivant", "#dfa93f"]],
@@ -1610,7 +1611,7 @@ function KfiReconciliation() {
   const setFam = (i, k, v) => { setForecast((f) => ({ ...f, families: f.families.map((row, j) => (j === i ? { ...row, [k]: v } : row)) })); setKfiValidated(null); };
   const setTotal = (v) => { setForecast((f) => ({ ...f, total: v })); setKfiValidated(null); };
   const setAlloc = (family, id, v) => { setAllocation((a) => ({ ...a, [family]: { ...(a[family] || {}), [id]: v } })); setKfiValidated(null); };
-  const kNum = (e) => Math.max(0, Math.round((e.target.value === "" ? 0 : +e.target.value) * 1000));
+  const kNum = (e) => Math.max(0, Math.round(e.target.value === "" ? 0 : +e.target.value)) * 1000;
   const kVal = (n) => Math.round((n || 0) / 1000);
   const gc = KFI_VERDICT_C[r.globalVerdict];
   const chainC = r.chainOk ? T.ok : T.bad;
@@ -1625,7 +1626,7 @@ function KfiReconciliation() {
     { k: "rse", label: "RSE / carbone", target: `${fr2(r.planCarbon)} kg/pc`, targetTxt: "trajectoire business plan", proj: `${fr2(r.projCarbon)} kg/pc`, delta: sp(r.carbonDeltaPct), v: r.dims[2].verdict, carriers: r.carbonCarriers },
   ];
   const focusCard = engagement.find((e) => e.k === kfiFocus);
-  const focusIds = focusCard ? new Set(focusCard.carriers.map((c) => c.id)) : null;
+  const focusIds = focusCard ? new Set(focusCard.carriers.map((c) => c.id).filter((id) => r.partners.some((p) => p.id === id))) : null;
 
   const synth = [
     { v: `${mp(r.totalForecast)} prévues`, c: T.ink },
@@ -1719,7 +1720,7 @@ function KfiReconciliation() {
               <thead><tr>{["Partenaire", "Famille", "Engagement plan", "Minimum", "Capacité max.", "Prix cible", "Qualité", "Traçabilité", "RSE / compliance", "Horizon", "Action de développement"].map((h, j) => <th key={h} style={{ ...KFI_TH, textAlign: j >= 2 && j <= 7 ? "right" : "left" }}>{h}</th>)}</tr></thead>
               <tbody>
                 {r.partners.map((p) => {
-                  const hi = focusIds ? focusIds.has(p.id) : null;
+                  const hi = focusIds && focusIds.size > 0 ? focusIds.has(p.id) : null;
                   return (
                     <tr key={p.id} style={{ background: hi ? `${KFI_VERDICT_C[focusCard.v]}12` : "transparent", opacity: hi === false ? 0.45 : 1 }}>
                       <td style={KFI_TD}><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><span style={{ fontWeight: 800, color: T.accent }}>{p.supplier}</span><GradeChip g={p.grade} /><span style={{ fontSize: 11, fontFamily: MONO, color: T.faint }}>{p.country}</span></span></td>
@@ -1968,8 +1969,8 @@ function KfiReconciliation() {
             <div style={{ marginTop: 12, display: "flex", alignItems: "flex-start", gap: 10, background: `${T.ok}14`, border: `1px solid ${T.ok}66`, borderRadius: 11, padding: "11px 14px" }}>
               <BadgeCheck size={16} color={T.ok} style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: 12, color: T.ink, lineHeight: 1.55 }}>
-                <strong>Arbitrage KFI validé le {kfiValidated.at.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} à {kfiValidated.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong> — option « {kfiValidated.option} » · scénario {kfiValidated.scenario} · {mp(kfiValidated.total)} prévues · {kp(kfiValidated.panel)} sur le panel partenaire · {kp(kfiValidated.uncovered)} à rephaser · {kp(kfiValidated.hors)} hors panel · verdict {kfiValidated.verdict} · chaîne {kfiValidated.chainOk ? "réconciliée" : "à corriger"}.
-                <div style={{ fontSize: 11, color: T.faint, marginTop: 3 }}>Démonstration sans persistance : transmis aux décisions à prendre et au panel fournisseurs ci-dessous. <span onClick={() => setKfiValidated(null)} style={{ color: T.blue, fontWeight: 700, cursor: "pointer" }}>Rouvrir l'arbitrage</span></div>
+                <strong>Arbitrage KFI validé le {kfiValidated.at.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} à {kfiValidated.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong> — option « {kfiValidated.option} » · scénario {kfiValidated.scenario} · {mp(kfiValidated.total)} prévues · {kp(kfiValidated.panel)} sur le panel partenaire · {kp(kfiValidated.uncovered)} non couvertes et {kp(kfiValidated.hors)} hors panel avant arbitrage · verdict {kfiValidated.verdict} · chaîne {kfiValidated.chainOk ? "réconciliée" : "à corriger"}.
+                <div style={{ fontSize: 11, color: T.faint, marginTop: 3 }}>Démonstration sans persistance : résumé conservé dans la page jusqu'au rechargement. <span onClick={() => setKfiValidated(null)} style={{ color: T.blue, fontWeight: 700, cursor: "pointer" }}>Rouvrir l'arbitrage</span></div>
               </div>
             </div>
           )}
