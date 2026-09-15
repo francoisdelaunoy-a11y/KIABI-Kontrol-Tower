@@ -305,6 +305,16 @@ function ChefPage({ st }) {
   const agentApplies = agent && (target === SEGMENTS[0] || target === sel.segment);
   const reco = st.recoFor(sel);
   const marge = Math.round(((st.pvcOf(sel) - st.revOf(sel)) / st.pvcOf(sel)) * 100);
+  /* Approved offers are frozen: every displayed choice comes from the approval snapshot and controls are disabled */
+  const locked = st.isLocked(sel.id);
+  const snap = locked ? st.snapshotOf(sel.id) : null;
+  const vAgent = locked ? snap.agentId : st.agentId;
+  const vTerr = locked ? snap.territoire : st.territoire;
+  const vZone = locked ? snap.zone : st.zone;
+  const vCol = locked ? snap.colIdx : st.colIdx;
+  const vLevers = locked ? new Set(snap.levers) : st.levers;
+  const shownAgent = locked ? AGENTS.find((a) => a.id === snap.agentId) || null : agentApplies ? agent : null;
+  const lockStyle = locked ? { opacity: 0.55, cursor: "not-allowed" } : {};
 
   return (
     <div>
@@ -327,6 +337,27 @@ function ChefPage({ st }) {
           <PMGauge icon={GitBranch} label="Quantities per colourway reference" used={20000} total={24000} unit="p" fmt={(n) => u(n)} color={T.silver} />
         </div>
       </div>
+
+      {/* ---- Approved offer: frozen summary (read only) ---- */}
+      {locked && (
+        <div style={{ background: T.panel, border: `1px solid ${T.ok}66`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <BadgeCheck size={16} color={T.ok} /><span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>{snap.name}</span>
+            <Chip color={T.ok}>Approved - read only</Chip>
+            <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>approved on {snap.at.toLocaleDateString("fr-FR")} at {snap.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
+            <button onClick={() => st.reopen(sel.id)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, fontFamily: SANS }}><Wrench size={13} /> Edit offer again</button>
+          </div>
+          <div style={{ fontSize: 11.5, color: T.sub, marginBottom: 10, lineHeight: 1.5 }}>All choices are frozen as they were at approval. Selecting the offer does not unlock it: only “Edit offer again” reopens editing and restores these choices.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 8 }}>
+            {[["Collection structure", snap.name], ["Segment", snap.segment], ["PVI", eur(snap.pvi)], ["Volume", `${u(snap.volume)} units`], ["Territory / zone", snap.territoire === "Specific" ? `Specific · ${snap.zone || "no zone"}` : "Core"], ["Offer agent", snap.agentName || "none"], ["Sourcing scenario", snap.scenName], ["Colourway", snap.coloris || "—"], ["Improvement levers", snap.leverNames.length ? snap.leverNames.join(" · ") : "none"], ["Product sheet", snap.sheet ? `${snap.sheet.filled} / ${snap.sheet.total} fields${snap.sheet.codif ? ` · ${snap.sheet.codif}` : ""}${snap.sheet.written ? " · written to PLM" : ""}` : "not generated"]].map(([l, v]) => (
+              <div key={l} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "8px 11px" }}>
+                <div style={{ fontSize: 10, color: T.faint, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5 }}>{l}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginTop: 3, lineHeight: 1.4 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ---- Offer structuring ---- */}
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
@@ -376,16 +407,16 @@ function ChefPage({ st }) {
         <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           <Sparkles size={15} color={T.human} /><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>Offer agents — only one active at a time</span>
           <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.faint, fontFamily: MONO }}>Apply to:
-            <select value={target} onChange={(e) => setTarget(e.target.value)} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 7, padding: "4px 8px", color: T.ink, fontSize: 11, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none" }}>
+            <select value={target} disabled={locked} onChange={(e) => setTarget(e.target.value)} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 7, padding: "4px 8px", color: T.ink, fontSize: 11, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none" }}>
               {SEGMENTS.map((s) => <option key={s}>{s}</option>)}
             </select>
           </span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(215px,1fr))", gap: 10 }}>
           {AGENTS.map((a) => {
-            const on = st.agentId === a.id;
+            const on = vAgent === a.id;
             return (
-              <button key={a.id} onClick={() => st.setAgentId(on ? null : a.id)} style={{ textAlign: "left", cursor: "pointer", background: on ? `${a.color}12` : T.panel2, border: `1px solid ${on ? a.color : T.line}`, borderRadius: 11, padding: "11px 12px" }}>
+              <button key={a.id} disabled={locked} onClick={() => !locked && st.setAgentId(on ? null : a.id)} style={{ textAlign: "left", cursor: "pointer", background: on ? `${a.color}12` : T.panel2, border: `1px solid ${on ? a.color : T.line}`, borderRadius: 11, padding: "11px 12px", ...lockStyle }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ width: 26, height: 26, borderRadius: 7, display: "grid", placeItems: "center", background: `${a.color}1c`, border: `1px solid ${a.color}55` }}><a.icon size={14} color={a.color} /></span>
                   <span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{a.name}</span>
@@ -404,9 +435,9 @@ function ChefPage({ st }) {
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {["Core", "Specific"].map((opt) => {
-              const on = st.territoire === opt;
+              const on = vTerr === opt;
               return (
-                <button key={opt} onClick={() => { st.setTerritoire(opt); if (opt === "Core") st.setZone(null); }} style={{ flex: "1 1 220px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 10, background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 10, padding: "11px 12px" }}>
+                <button key={opt} disabled={locked} onClick={() => { if (locked) return; st.setTerritoire(opt); if (opt === "Core") st.setZone(null); }} style={{ ...lockStyle, flex: "1 1 220px", textAlign: "left", cursor: locked ? "not-allowed" : "pointer", display: "flex", alignItems: "flex-start", gap: 10, background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 10, padding: "11px 12px" }}>
                   <span style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, marginTop: 1, display: "grid", placeItems: "center", background: on ? T.human : "transparent", border: `1.5px solid ${on ? T.human : T.faint}` }}>{on && <Check size={12} color="#ffffff" />}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{opt}</div>
@@ -416,28 +447,29 @@ function ChefPage({ st }) {
               );
             })}
           </div>
-          {st.territoire === "Specific" && (
+          {vTerr === "Specific" && (
             <div style={{ marginTop: 12 }}>
               <span style={microLbl}>Target zone — only one at a time</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {ZONES.map((z) => {
-                  const on = st.zone === z;
+                  const on = vZone === z;
                   return (
-                    <button key={z} onClick={() => st.setZone(on ? null : z)} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 999, padding: "7px 13px", fontSize: 12, fontWeight: 700, fontFamily: SANS, color: on ? T.ink : T.sub }}>
+                    <button key={z} disabled={locked} onClick={() => !locked && st.setZone(on ? null : z)} style={{ ...lockStyle, display: "inline-flex", alignItems: "center", gap: 8, cursor: locked ? "not-allowed" : "pointer", background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 999, padding: "7px 13px", fontSize: 12, fontWeight: 700, fontFamily: SANS, color: on ? T.ink : T.sub }}>
                       <span style={{ width: 15, height: 15, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: on ? T.human : "transparent", border: `1.5px solid ${on ? T.human : T.faint}` }}>{on && <Check size={10} color="#ffffff" />}</span>
                       {z}
                     </button>
                   );
                 })}
               </div>
-              {!st.zone && <div style={{ fontSize: 11, color: T.faint, marginTop: 8 }}>Select a zone to adapt the offer.</div>}
+              {!vZone && !locked && <div style={{ fontSize: 11, color: T.faint, marginTop: 8 }}>Select a zone to adapt the offer.</div>}
             </div>
           )}
         </div>
 
         <div style={{ marginTop: 12, padding: "11px 13px", background: T.panel, border: `1px solid ${T.accent}55`, borderRadius: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, color: T.ink }}>Agent applied to <strong>“{sel.name}”</strong>:</span>
-          {agentApplies ? <Chip color={agent.color}>{agent.name}</Chip> : <span style={{ fontSize: 11.5, color: T.faint }}>no active agent on this segment</span>}
+          {shownAgent ? <Chip color={shownAgent.color}>{shownAgent.name}</Chip> : <span style={{ fontSize: 11.5, color: T.faint }}>no active agent on this segment</span>}
+          {locked && <Chip color={T.ok}>Approved - read only</Chip>}
           <span style={{ marginLeft: "auto", fontSize: 11, color: T.faint, fontFamily: MONO }}>→ broken down into {sel.coloris.length} colourway refs in “Work in progress”</span>
         </div>
       </div>
@@ -458,9 +490,9 @@ function ChefPage({ st }) {
         <span style={microLbl}>Colourway references — select the one that drives the offer</span>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
           {sel.coloris.map(([n, c], i) => {
-            const on = st.colIdx === i;
+            const on = vCol === i;
             return (
-              <button key={n} onClick={() => st.setColIdx(i)} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", background: on ? `${T.accent}10` : T.panel2, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 999, padding: "7px 13px", fontSize: 12, fontWeight: 700, color: on ? T.ink : T.sub }}>
+              <button key={n} disabled={locked} onClick={() => !locked && st.setColIdx(i)} style={{ ...lockStyle, display: "inline-flex", alignItems: "center", gap: 8, cursor: locked ? "not-allowed" : "pointer", background: on ? `${T.accent}10` : T.panel2, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 999, padding: "7px 13px", fontSize: 12, fontWeight: 700, color: on ? T.ink : T.sub }}>
                 <span style={{ width: 14, height: 14, borderRadius: 99, background: c, border: `1px solid ${T.line}` }} />{n}
                 <span style={{ fontFamily: MONO, fontSize: 10, color: T.faint }}>{sel.id.toUpperCase()}-{String(i + 1).padStart(2, "0")}</span>
               </button>
@@ -470,12 +502,12 @@ function ChefPage({ st }) {
         <span style={microLbl}>Collection structure indicators</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {[
-            { label: "PVI", val: eur(st.pvcOf(sel)), icon: Tag, color: T.accent },
-            { label: "Cost price", val: eur(st.revOf(sel)), icon: Wallet, color: T.blue },
-            { label: "Margin", val: marge + " %", icon: TrendingUp, color: T.human },
-            { label: "CO₂ weight / piece", val: st.co2Of(sel) + " kg", icon: Leaf, color: T.ok },
-            { label: "Supply lead time", val: st.leadOf(reco) + " d", icon: Truck, color: T.silver },
-            { label: "Volume", val: u(st.volOf(sel)) + " units", icon: Boxes, color: T.silver },
+            { label: "PVI", val: eur(locked ? snap.pvi : st.pvcOf(sel)), icon: Tag, color: T.accent },
+            { label: "Cost price", val: eur(locked ? snap.revient : st.revOf(sel)), icon: Wallet, color: T.blue },
+            { label: "Margin", val: (locked ? snap.marge : marge) + " %", icon: TrendingUp, color: T.human },
+            { label: "CO₂ weight / piece", val: (locked ? snap.co2 : st.co2Of(sel)) + " kg", icon: Leaf, color: T.ok },
+            { label: "Supply lead time", val: (locked ? snap.lead : st.leadOf(reco)) + " d", icon: Truck, color: T.silver },
+            { label: "Volume", val: u(locked ? snap.volume : st.volOf(sel)) + " units", icon: Boxes, color: T.silver },
           ].map((s) => (
             <div key={s.label} style={{ flex: "1 1 130px", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 13px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, color: T.sub, fontSize: 11, fontWeight: 600 }}><s.icon size={13} color={s.color} />{s.label}</div>
@@ -500,9 +532,9 @@ function ChefPage({ st }) {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {ag.levers.map((lv) => {
-                  const on = st.levers.has(lv.id);
+                  const on = vLevers.has(lv.id);
                   return (
-                    <button key={lv.id} onClick={() => st.toggleLever(lv.id)} style={{ textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 9, background: on ? `${ag.color}12` : T.panel, border: `1px solid ${on ? ag.color : T.line}`, borderRadius: 9, padding: "8px 10px" }}>
+                    <button key={lv.id} disabled={locked} onClick={() => !locked && st.toggleLever(lv.id)} style={{ ...lockStyle, textAlign: "left", cursor: locked ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 9, background: on ? `${ag.color}12` : T.panel, border: `1px solid ${on ? ag.color : T.line}`, borderRadius: 9, padding: "8px 10px" }}>
                       <span style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0, display: "grid", placeItems: "center", background: on ? ag.color : "transparent", border: `1.5px solid ${on ? ag.color : T.faint}` }}>{on && <Check size={11} color="#ffffff" />}</span>
                       <span style={{ flex: 1, fontSize: 11.5, fontWeight: 600, color: T.ink }}>{lv.t}</span>
                       <span style={{ fontFamily: MONO, fontSize: 10.5, color: ag.color, whiteSpace: "nowrap" }}>{lv.effect}</span>
@@ -515,6 +547,9 @@ function ChefPage({ st }) {
         </div>
       </div>
 
+      {/* ---- Product sheet assistant: at the end of the product brief, a voice note generates the sheet ---- */}
+      <ProductSheetAssistant st={st} locked={locked} />
+
       {/* ---- Product development validation ---- */}
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -522,8 +557,9 @@ function ChefPage({ st }) {
           <Chip color={T.accent}>{sel.name}</Chip>
         </div>
         <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 12px" }}>The product manager approves or rejects the development of the selected collection structure. Approval publishes the deliverables to the PLM.</p>
-        {!st.approved.has(sel.id) ? (
+        {!st.approved.has(sel.id) || st.isReopened(sel.id) ? (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {st.isReopened(sel.id) && <span style={{ flexBasis: "100%", fontSize: 11.5, color: T.warn, fontFamily: MONO }}>Offer reopened for editing — approve again to freeze the new choices.</span>}
             <button onClick={() => st.approve(sel.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.ok, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}><Check size={14} /> Approve</button>
             <button onClick={() => st.reject(sel.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.panel2, color: T.bad, border: `1px solid ${T.bad}66`, borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, fontFamily: SANS }}><X size={14} /> Reject</button>
             {st.rejected.has(sel.id) && <span style={{ fontSize: 11.5, color: T.bad, fontFamily: MONO }}>Development rejected — sent back to design for rework.</span>}
@@ -532,7 +568,8 @@ function ChefPage({ st }) {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
               <Check size={15} color={T.ok} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Product development finalised — deliverables available</span>
-              <button onClick={() => st.unapprove(sel.id)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}><X size={12} /> Undo</button>
+              <Chip color={T.ok}>Approved - read only</Chip>
+              <button onClick={() => st.reopen(sel.id)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}><Wrench size={12} /> Edit offer again</button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", background: T.panel2, border: `1px solid #00a3c455`, borderRadius: 12, padding: "13px 16px", marginBottom: 14 }}>
               <WhiteBadge><img src={CENTRIC_LOGO} alt="Dassault Centric" style={{ height: 30, width: "auto", display: "block" }} /></WhiteBadge>
@@ -752,6 +789,8 @@ function DirectricePage({ st }) {
 
   return (
     <div>
+      <MarketBriefEditor st={st} />
+
       {/* ---- Collection director cockpit ---- */}
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
@@ -905,11 +944,204 @@ function DirectricePage({ st }) {
 }
 
 /* ============================================================
-   Assistant product manager tab — voice-based referencing
+   Product sheet assistant (voice-based referencing, integrated in the Product Manager journey)
    ============================================================ */
 const catOf = (n) => { const s = n.toLowerCase(); if (s.includes("bod")) return "Bodysuit"; if (s.includes("pyjama") || s.includes("sleepsuit")) return "Sleepsuit / Pyjamas"; if (s.includes("romper")) return "Romper"; return "Set"; };
 
-function AssistantePage({ st }) {
+/* ============================================================
+   Market brief — written in Market Framework, copied read-only to
+   Collection Framework and Product Manager (local simulation, no network)
+   ============================================================ */
+const STYLE3D_NAME = "Style3D"; /* transcribed as "Steel 3D" in the voice brief — most likely Style3D; adjust here if needed */
+const MARKET_SOURCES = [
+  { id: "style3d", name: STYLE3D_NAME, desc: "3D styling & material trend library", signal: "3D material library flags soft velour, pointelle knits and matte ribs rising in baby nightwear" },
+  { id: "search", name: "Search trends", desc: "search interest by product family", signal: "search interest up for sleepsuits and bodysuit packs, flat on licensed characters" },
+  { id: "social", name: "Social listening", desc: "social conversations and creator content", signal: "sage green, ecru and dusty pink dominate baby content; comfort and easy dressing are the top themes" },
+  { id: "sales", name: "Sales history", desc: "S1 2025-2026 sell-through by collection structure", signal: "permanent bodysuit packs and nightwear drive 65 % of volume; the 9 € price point is saturated" },
+];
+const BRIEF_THEMES = [
+  { re: /comfort|soft|cosy|cozy|gentle/i, theme: "Comfort & softness", guidance: "prioritise soft certified materials, flat seams and easy-dressing openings" },
+  { re: /price|value|affordab|cheap|budget|accessib/i, theme: "Price accessibility", guidance: "hold the 4 → 15 € price ladder and smart packs on essentials" },
+  { re: /carbon|recycl|sustain|eco|planet|footprint/i, theme: "Low-carbon offer", guidance: "recycled cotton and nearshore sourcing on the highest-volume structures" },
+  { re: /licen|character|disney|marvel|hero/i, theme: "Licences & characters", guidance: "keep licences as impulse picks within the 10 – 16 % collab share" },
+  { re: /colou?r|pastel|sage|palette|tone/i, theme: "Colour direction", guidance: "push the S1 2027 fashion colour towards 18 % of the colour mix" },
+  { re: /international|export|zone|maghreb|south|tropic/i, theme: "International reach", guidance: "open export-eligible Core structures to the South and Maghreb zones" },
+  { re: /essential|basic|permanent|bodysuit|sleepsuit|nightwear|underwear/i, theme: "Essentials base", guidance: "secure permanent bodysuit packs and nightwear availability all season" },
+  { re: /trend|fashion|novelty|capsule|impulse|animation/i, theme: "Fashion animation", guidance: "add impulse picks to reach the 15 – 22 % animation share" },
+];
+const SAMPLE_MARKET_INTENTION = "For S1 2027 the Baby market must stay the most accessible layette offer on the market: hold the 4 → 15 € price ladder, secure permanent bodysuit packs and nightwear every week of the season, and bring comfort and softness to every essential. We push a low-carbon direction on the biggest volumes with recycled cotton and nearshore sourcing. Colour direction: sage green and ecru as the season signature. Licences remain an impulse animation, not the base. Open the export-eligible Core structures to the South and Maghreb zones.";
+/* Pure local synthesis: structured brief derived from the written intention and the selected (simulated) sources */
+function synthesizeMarketBrief(text, sourceIds) {
+  const clean = text.trim().replace(/\s+/g, " ");
+  const sentences = clean.split(/[.!?]+\s+/).map((s) => s.trim()).filter(Boolean);
+  const themes = BRIEF_THEMES.filter((t) => t.re.test(clean));
+  const sources = MARKET_SOURCES.filter((s) => sourceIds.includes(s.id));
+  const priorities = themes.slice(0, 4).map((t) => t.guidance);
+  priorities.push("keep every collection within the Financial Framework and CO₂ Framework envelopes");
+  return {
+    headline: sentences[0] ? sentences[0].replace(/[.!?]+$/, "").slice(0, 180) : "Market intention to be written",
+    themes: themes.length ? themes.map((t) => ({ theme: t.theme, guidance: t.guidance })) : [{ theme: "General market direction", guidance: "derive the collection guidelines from the intention above" }],
+    signals: sources.map((s) => ({ source: s.name, txt: s.signal })),
+    priorities,
+    words: clean ? clean.split(" ").filter(Boolean).length : 0,
+  };
+}
+
+/* Step 1 of Market Framework: the Market Manager writes the intention and synthesizes the brief (editable here only) */
+function MarketBriefEditor({ st }) {
+  const brief = st.marketBrief;
+  const [draft, setDraft] = useState(brief ? brief.text : "");
+  const [sources, setSources] = useState(() => new Set(brief ? brief.sourceIds : MARKET_SOURCES.map((s) => s.id)));
+  const toggle = (id) => setSources((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const canRun = draft.trim().length >= 20 && sources.size > 0;
+  const run = () => { const ids = MARKET_SOURCES.map((s) => s.id).filter((id) => sources.has(id)); st.setMarketBrief({ text: draft, sourceIds: ids, sourceNames: MARKET_SOURCES.filter((s) => ids.includes(s.id)).map((s) => s.name), summary: synthesizeMarketBrief(draft, ids), at: new Date() }); };
+  const dirty = brief && brief.text !== draft;
+  return (
+    <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+        <span style={{ width: 26, height: 26, borderRadius: 99, display: "grid", placeItems: "center", background: T.accent, color: "#ffffff", fontFamily: MONO, fontSize: 12, fontWeight: 800 }}>1</span>
+        <span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>Write the market brief</span>
+        <span style={{ fontSize: 11.5, color: T.faint }}>shared orientation for the whole market, then for the collections and the products</span>
+        {brief && <span style={{ marginLeft: "auto" }}><Chip color={dirty ? T.warn : T.ok}>{dirty ? "Edited since last synthesis" : "Brief synthesized"}</Chip></span>}
+      </div>
+      <span style={microLbl}>Trend data connectors — simulated sources, no network call</span>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 14 }}>
+        {MARKET_SOURCES.map((s) => {
+          const on = sources.has(s.id);
+          return (
+            <button key={s.id} onClick={() => toggle(s.id)} style={{ textAlign: "left", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 9, background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 10, padding: "10px 12px", fontFamily: SANS }}>
+              <span style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0, marginTop: 1, display: "grid", placeItems: "center", background: on ? T.human : "transparent", border: `1.5px solid ${on ? T.human : T.faint}` }}>{on && <Check size={11} color="#ffffff" />}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{s.name}</span><span style={{ fontSize: 9.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>simulated</span></span>
+                <span style={{ display: "block", fontSize: 10.5, color: T.faint, marginTop: 2, lineHeight: 1.4 }}>{s.desc}</span>
+              </span>
+              <span style={{ width: 7, height: 7, borderRadius: 99, background: on ? T.ok : T.line, flexShrink: 0, marginTop: 5 }} />
+            </button>
+          );
+        })}
+      </div>
+      <span style={microLbl}>Market intention — written by the Market Manager</span>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={7} placeholder="Describe the market intention for S1 2027: price positioning, essentials to secure, comfort and material direction, low-carbon ambition, colour signature, licences, international reach…" style={{ display: "block", width: "100%", boxSizing: "border-box", resize: "vertical", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "11px 13px", fontSize: 12.5, lineHeight: 1.55, color: T.ink, outline: "none", fontFamily: SANS }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>{draft.trim() ? `${u(draft.trim().split(/\s+/).length)} words · ${sources.size} source${sources.size > 1 ? "s" : ""} selected` : "empty intention"}</span>
+        <button onClick={() => setDraft(SAMPLE_MARKET_INTENTION)} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}><FileText size={12} /> Insert a sample intention</button>
+        <button onClick={run} disabled={!canRun} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, cursor: canRun ? "pointer" : "not-allowed", opacity: canRun ? 1 : 0.5, background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "10px 17px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}><Sparkles size={14} /> Synthesize market brief</button>
+      </div>
+      {brief && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: `${T.ok}14`, border: `1px solid ${T.ok}66`, borderRadius: 11, padding: "11px 14px", marginBottom: 12, flexWrap: "wrap" }}>
+            <BadgeCheck size={16} color={T.ok} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: T.ink, lineHeight: 1.5 }}>
+              <strong>Market brief synthesized on {brief.at.toLocaleDateString("fr-FR")} at {brief.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong> — available to Collection Framework and Product Manager as a read-only copy. It stays editable here only.
+            </div>
+            <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+              <button onClick={() => st.setTab("collection")} style={{ cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>Collection Framework →</button>
+              <button onClick={() => st.setTab("product")} style={{ cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>Product Manager →</button>
+            </span>
+          </div>
+          <MarketBriefCard st={st} origin={false} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Read-only copy of the market brief (Collection Framework and Product Manager), with its provenance */
+function MarketBriefCard({ st, origin = true }) {
+  const b = st.marketBrief;
+  if (!b) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: T.panel2, border: `1px dashed ${T.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
+        <FileText size={15} color={T.faint} />
+        <span style={{ fontSize: 12, color: T.sub, flex: "1 1 240px" }}>No market brief yet — the Market Manager writes and synthesizes it in Market Framework.</span>
+        <button onClick={() => st.setTab("market")} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>Go to Market Framework <ArrowRight size={12} /></button>
+      </div>
+    );
+  }
+  const s = b.summary;
+  return (
+    <div style={{ background: origin ? T.panel : T.panel2, border: `1px solid ${origin ? `${T.accent}44` : T.line}`, borderRadius: 12, padding: "14px 16px", marginBottom: origin ? 18 : 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <Crown size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Market brief</span>
+        {origin ? <Chip color={T.accent}>Read-only copy · from Market Framework</Chip> : <Chip color={T.ok}>Synthesis</Chip>}
+        <span style={{ marginLeft: "auto", fontSize: 10.5, fontFamily: MONO, color: T.faint }}>{b.at.toLocaleDateString("fr-FR")} · {b.sourceNames.join(", ")}</span>
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.45, marginBottom: 10 }}>{s.headline}.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }}>
+        <div>
+          <span style={microLbl}>Key themes</span>
+          {s.themes.map((t) => (
+            <div key={t.theme} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: T.sub, lineHeight: 1.45, marginBottom: 5 }}><Chip color={T.human}>{t.theme}</Chip><span>{t.guidance}</span></div>
+          ))}
+        </div>
+        <div>
+          <span style={microLbl}>Signals from the selected sources</span>
+          {s.signals.length ? s.signals.map((x) => (
+            <div key={x.source} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: T.sub, lineHeight: 1.45, marginBottom: 5 }}><Check size={13} color={T.ok} style={{ flexShrink: 0, marginTop: 2 }} /><span><strong style={{ color: T.ink }}>{x.source}</strong> — {x.txt}</span></div>
+          )) : <div style={{ fontSize: 11.5, color: T.faint }}>no source selected</div>}
+        </div>
+        <div>
+          <span style={microLbl}>Priorities for collections and products</span>
+          {s.priorities.map((p, i) => (
+            <div key={p} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: T.sub, lineHeight: 1.45, marginBottom: 5 }}><span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 800, color: T.accent, flexShrink: 0, marginTop: 1 }}>{i + 1}.</span><span>{p}</span></div>
+          ))}
+        </div>
+      </div>
+      {origin && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 10 }}>Editable from Market Framework only · {u(s.words)} words in the source intention.</div>}
+    </div>
+  );
+}
+
+/* ============================================================
+   Market Framework (Market Manager) · Collection Framework (empty state) · Product Manager
+   ============================================================ */
+function MarketFrameworkPage({ st }) {
+  return (
+    <div>
+      <PageHeader title="Market Framework" desc="The Market Manager writes the market brief, then checks the overall balance of the collection built by the product managers." expert={EXPERTS.directrice} />
+      <CascadeBanner st={st} area="Offer & Collection" />
+      <DirectricePage st={st} />
+    </div>
+  );
+}
+
+function CollectionFrameworkPage({ st }) {
+  return (
+    <div>
+      <PageHeader title="Collection Framework" desc="Collection-level framing, built from the market brief before the product managers structure their offers." expert={{ role: "Business decision-maker", txt: "The collection framework will translate the market brief into guidelines for each collection structure. It is not built yet." }} />
+      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 22, marginBottom: 18, textAlign: "center" }}>
+        <span style={{ width: 44, height: 44, borderRadius: 12, display: "inline-grid", placeItems: "center", background: `${T.accent}12`, border: `1px solid ${T.accent}44`, marginBottom: 10 }}><LayoutGrid size={20} color={T.accent} /></span>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Collection framework not built yet</div>
+        <div style={{ fontSize: 12, color: T.sub, marginTop: 4, lineHeight: 1.5 }}>The collection framing will be derived from the market brief once the Market Manager has synthesized it.</div>
+        <div style={{ display: "inline-block", textAlign: "left", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", marginTop: 14 }}>
+          <span style={microLbl}>Coming next</span>
+          {["Collection guidelines derived from the market brief", "Framing per collection structure, shared with the product managers", "Hand-off to the Product Manager offer structuring"].map((t) => (
+            <div key={t} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: T.sub, lineHeight: 1.45, marginBottom: 4 }}><ArrowRight size={12} color={T.faint} style={{ flexShrink: 0, marginTop: 3 }} />{t}</div>
+          ))}
+        </div>
+      </div>
+      <span style={microLbl}>Market brief received from Market Framework</span>
+      <MarketBriefCard st={st} />
+    </div>
+  );
+}
+
+function ProductManagerPage({ st }) {
+  return (
+    <div>
+      <PageHeader title="Product Manager" desc="From the market brief to the product sheet: structure the Baby offer, break it down into products, generate the product sheet from a voice note and validate development." expert={EXPERTS.design} />
+      <CascadeBanner st={st} area="Offer & Collection" />
+      <MarketBriefCard st={st} />
+      <ChefPage st={st} />
+    </div>
+  );
+}
+
+/* ============================================================
+   Product sheet assistant — end of the Product Manager journey:
+   a voice note is enough to generate and write the product sheet
+   ============================================================ */
+function ProductSheetAssistant({ st, locked }) {
   const sel = st.sel;
   const [played, setPlayed] = useState(false);
   const [analyzed, setAnalyzed] = useState(false);
@@ -938,6 +1170,8 @@ function AssistantePage({ st }) {
 
   const transcript = `“Hi, this is for the referencing of the ${sel.name}. For the description you can put: ${sel.name.toLowerCase()}, ${sel.compo}, S1 2027 collection. The category is ${catOf(sel.name).toLowerCase()}, knitted, unisex baby. Sizes run from 1 month to 36 months. For the colourways you have ${sel.coloris.map(([n]) => n.toLowerCase()).join(", ")}. You already know the material composition: ${sel.compo}, with polyester thread and nickel-free snaps. Can you fill in the rest in Centric for me? Thanks!”`;
 
+  /* Report the sheet progress to the shared state so an approval snapshot can freeze it */
+  const report = (f, w) => st.setSheet(sel.id, { filled: Object.keys(f).length, total: REF_FIELDS.length, codif: f.codif || null, written: w });
   const analyze = () => {
     const f = {
       desc: `${sel.name} — ${sel.compo} — S1 2027 collection`,
@@ -948,35 +1182,38 @@ function AssistantePage({ st }) {
       genre: "Unisex baby",
       bom: `${sel.compo} · 100% polyester sewing thread · nickel-free snaps`,
     };
-    setFields(f); setFromVocal(new Set(Object.keys(f))); setAnalyzed(true); setWritten(false);
+    setFields(f); setFromVocal(new Set(Object.keys(f))); setAnalyzed(true); setWritten(false); report(f, false);
   };
-  const reset = () => { setPlayed(false); setAnalyzed(false); setFields({}); setFromVocal(new Set()); setInp(""); setWritten(false); };
+  const reset = () => { setPlayed(false); setAnalyzed(false); setFields({}); setFromVocal(new Set()); setInp(""); setWritten(false); st.setSheet(sel.id, null); };
 
   const missing = REF_FIELDS.filter((f) => !fields[f.k]);
   const current = missing[0];
   const filled = REF_FIELDS.length - missing.length;
   const complete = analyzed && missing.length === 0;
-  const answer = (v) => { if (!v || !v.trim() || !current) return; setFields((m) => ({ ...m, [current.k]: v.trim() })); setInp(""); };
+  const answer = (v) => { if (locked || !v || !v.trim() || !current) return; const f = { ...fields, [current.k]: v.trim() }; setFields(f); setInp(""); report(f, false); };
+  const write = () => { setWritten(true); report(fields, true); };
+  const dis = (on) => ({ opacity: locked ? 0.5 : 1, cursor: locked ? "not-allowed" : on ? "pointer" : "default" });
 
   return (
     <div>
       {/* ---- Voice note ---- */}
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          <Mic size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Voice-based referencing</span>
+          <Mic size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Product sheet from a voice note</span>
           <Chip color={T.accent}>{sel.name}</Chip>
-          <button onClick={reset} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}><RotateCcw size={12} /> Start over</button>
+          {locked && <Chip color={T.ok}>Approved - read only</Chip>}
+          <button onClick={reset} disabled={locked} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS, ...dis(true) }}><RotateCcw size={12} /> Start over</button>
         </div>
-        <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 12px" }}>The product manager has left a voice note on the product selected in the “Product manager” tab. The agent extracts the referencing details from it, then asks questions to collect the missing fields before writing to the PLM.</p>
+        <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 12px" }}>At the end of the product brief, a voice note from the Product Manager is enough to generate the product sheet: the agent extracts the referencing details from the note, asks for the missing fields, then writes the sheet to the PLM — one continuous journey, no separate tab.</p>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 11, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px" }}>
-          <button onClick={() => setPlayed(true)} style={{ width: 36, height: 36, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", cursor: "pointer", background: T.accent, border: "none" }}><Play size={16} color="#ffffff" /></button>
+          <button onClick={() => !locked && setPlayed(true)} disabled={locked} style={{ width: 36, height: 36, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: T.accent, border: "none", ...dis(true) }}><Play size={16} color="#ffffff" /></button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>Voice note from the product manager · 0:42</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>Voice note from the Product Manager · 0:42</div>
             {played
               ? <div style={{ fontSize: 12, color: T.sub, fontStyle: "italic", lineHeight: 1.6, marginTop: 6 }}>{transcript}</div>
-              : <div style={{ fontSize: 11.5, color: T.faint, marginTop: 4 }}>Click play to listen and display the transcript.</div>}
+              : <div style={{ fontSize: 11.5, color: T.faint, marginTop: 4 }}>{locked ? "Offer approved — the voice note journey is frozen." : "Click play to listen and display the transcript."}</div>}
             {played && !analyzed && (
-              <button onClick={analyze} style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.human, color: "#ffffff", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, fontFamily: SANS }}><Sparkles size={13} /> Analyse the voice note with the agent</button>
+              <button onClick={analyze} disabled={locked} style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 7, background: T.human, color: "#ffffff", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, fontFamily: SANS, ...dis(true) }}><Sparkles size={13} /> Analyse the voice note with the agent</button>
             )}
           </div>
         </div>
@@ -985,7 +1222,7 @@ function AssistantePage({ st }) {
       {analyzed && (
         <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-            <ClipboardList size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>PLM referencing sheet</span>
+            <ClipboardList size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>PLM product sheet</span>
             <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.sub }}>{filled} / {REF_FIELDS.length} fields</span>
           </div>
           <div style={{ height: 6, background: T.line, borderRadius: 99, marginBottom: 14, overflow: "hidden" }}><div style={{ width: (filled / REF_FIELDS.length) * 100 + "%", height: "100%", background: complete ? T.ok : T.accent, borderRadius: 99 }} /></div>
@@ -1018,25 +1255,25 @@ function AssistantePage({ st }) {
           {current.sug && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
               {current.sug.map((s) => (
-                <button key={s} onClick={() => answer(s)} style={{ cursor: "pointer", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 999, padding: "7px 13px", fontSize: 11.5, fontWeight: 700, color: T.ink, fontFamily: SANS }}>{s}</button>
+                <button key={s} onClick={() => answer(s)} disabled={locked} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 999, padding: "7px 13px", fontSize: 11.5, fontWeight: 700, color: T.ink, fontFamily: SANS, ...dis(true) }}>{s}</button>
               ))}
             </div>
           )}
           <div style={{ display: "flex", gap: 8 }}>
-            <input value={inp} onChange={(e) => setInp(e.target.value)} onKeyDown={(e) => e.key === "Enter" && answer(inp)} placeholder="Or type your answer…" style={{ flex: 1, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 9, padding: "9px 12px", fontSize: 12.5, color: T.ink, outline: "none", fontFamily: SANS }} />
-            <button onClick={() => answer(inp)} style={{ cursor: "pointer", background: T.human, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 13px", display: "grid", placeItems: "center" }}><Send size={14} /></button>
+            <input value={inp} onChange={(e) => setInp(e.target.value)} onKeyDown={(e) => e.key === "Enter" && answer(inp)} disabled={locked} placeholder={locked ? "Offer approved — read only" : "Or type your answer…"} style={{ flex: 1, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 9, padding: "9px 12px", fontSize: 12.5, color: T.ink, outline: "none", fontFamily: SANS, ...dis(false) }} />
+            <button onClick={() => answer(inp)} disabled={locked} style={{ background: T.human, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 13px", display: "grid", placeItems: "center", ...dis(true) }}><Send size={14} /></button>
           </div>
         </div>
       )}
 
       {complete && (
-        <div style={{ background: T.panel, border: `1px solid ${T.ok}55`, borderRadius: 14, padding: 18 }}>
+        <div style={{ background: T.panel, border: `1px solid ${T.ok}55`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-            <BadgeCheck size={15} color={T.ok} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Referencing complete — ready for the PLM</span>
+            <BadgeCheck size={15} color={T.ok} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Product sheet complete — ready for the PLM</span>
             <Chip color={T.ok}>{REF_FIELDS.length} / {REF_FIELDS.length} fields</Chip>
           </div>
           {!written ? (
-            <button onClick={() => setWritten(true)} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", background: "#005386", color: "#ffffff", border: "none", borderRadius: 9, padding: "10px 17px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}><Database size={15} /> Write the referencing to the Dassault Centric PLM</button>
+            <button onClick={write} disabled={locked} style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#005386", color: "#ffffff", border: "none", borderRadius: 9, padding: "10px 17px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS, ...dis(true) }}><Database size={15} /> Write the product sheet to the Dassault Centric PLM</button>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", background: T.panel2, border: `1px solid #00a3c455`, borderRadius: 12, padding: "13px 16px" }}>
               <WhiteBadge><img src={CENTRIC_LOGO} alt="Dassault Centric" style={{ height: 30, width: "auto", display: "block" }} /></WhiteBadge>
@@ -1052,34 +1289,6 @@ function AssistantePage({ st }) {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   Offer & Collection page (2 sub-tabs)
-   ============================================================ */
-function OffrePage({ st }) {
-  const [sub, setSub] = useState("chef");
-  return (
-    <div>
-      <PageHeader
-        title="Offer & Collection"
-        desc="Three business views: the product manager steers the Baby offer, the assistant handles PLM referencing, the market manager ensures the overall balance."
-        expert={sub === "chef" ? EXPERTS.design : sub === "assist" ? EXPERTS.assistante : EXPERTS.directrice}
-      />
-      <CascadeBanner st={st} area="Offer & Collection" />
-      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-        {[{ id: "chef", label: "Product manager", icon: UserCog }, { id: "assist", label: "Assistant product manager", icon: Mic }, { id: "dir", label: "Market manager", icon: Crown }].map((t) => {
-          const on = sub === t.id;
-          return (
-            <button key={t.id} onClick={() => setSub(t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: on ? T.human : T.panel2, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 999, padding: "8px 15px", fontSize: 12, fontWeight: 700, fontFamily: SANS }}>
-              <t.icon size={13} /> {t.label}
-            </button>
-          );
-        })}
-      </div>
-      {sub === "chef" ? <ChefPage st={st} /> : sub === "assist" ? <AssistantePage st={st} /> : <DirectricePage st={st} />}
     </div>
   );
 }
@@ -2356,7 +2565,7 @@ function PerformancePage({ st }) {
 }
 
 /* ============================================================
-   Budget & Arbitration — 4-step budget ritual
+   Financial Framework — 3-step budget framing (monitoring moved to the Monitoring tab)
    ============================================================ */
 const IND = [
   { k: "budget", label: "Budget", unit: "M€", step: 10, fmt: (v) => `${u(v)} M€` },
@@ -2391,15 +2600,12 @@ const analyseCopie = (c, obj) => {
   return { verdict, txt, ecart, ecartPct, tmvExp, tmeExp, dTmv, chaineOk };
 };
 
-function BudgetModule() {
+function BudgetModule({ fw }) {
   const [step, setStep] = useState(1);
-  const [glob, setGlob] = useState({ ...BUDGET_GLOBAL });
-  const [depts, setDepts] = useState(BUDGET_DEPTS.map((d) => ({ ...d })));
+  const { budgetGlob: glob, setBudgetGlob: setGlob, budgetDepts: depts, setBudgetDepts: setDepts } = fw; /* shared with Monitoring */
   const [sentAt, setSentAt] = useState(null);
   const [mailOpen, setMailOpen] = useState(null);
   const [received, setReceived] = useState(false);
-  const [month, setMonth] = useState(0);
-  const [metric, setMetric] = useState("ca");
 
   const setG = (k, v) => setGlob((g) => ({ ...g, [k]: v }));
   const setD = (i, k, v) => setDepts((ds) => ds.map((d, j) => (j === i ? { ...d, [k]: v } : d)));
@@ -2414,63 +2620,12 @@ function BudgetModule() {
   const gapPct = (gapGlobal / glob.budget) * 100;
   const aReprendre = analyses.filter((x) => x.a.verdict !== "Compliant").sort((x, y) => (x.a.verdict === "Inconsistency" ? -1 : 1));
 
-  /* Step 4 — monitoring */
-  const cumPh = PHASAGE_CA.slice(0, month + 1).reduce((s, v) => s + v, 0) / 100;
-  const mon = depts.map((d) => {
-    const cumPhased = d.budget * cumPh;
-    const fac = REEL_CA_FACTEUR[d.n](month);
-    const cumReel = cumPhased * fac;
-    const demPh = +(d.demarque + PHASAGE_DEM[month]).toFixed(1);
-    const demRe = +(demPh + REEL_DEM_ECART[d.n](month)).toFixed(1);
-    const tmvPh = tmvModel(d.tme, demPh);
-    const tmvRe = tmvModel(d.tme, demRe);
-    const devCa = Math.abs(fac - 1) * 100;
-    const devTmv = Math.abs(tmvRe - tmvPh);
-    const dev = Math.max(devCa, devTmv);
-    const status = dev <= 2 ? "vert" : dev <= 4 ? "orange" : "rouge";
-    return { d, cumPhased, cumReel, fac, demPh, demRe, tmvPh, tmvRe, devCa, devTmv, dev, status, proj: d.budget * fac };
-  });
-  const alerts = mon.filter((x) => x.status !== "vert").map((x) => {
-    const parts = [];
-    if (x.devTmv > 2) parts.push(`markdown at ${fr1(x.demRe)} % in ${MOIS_LONG[month]} vs ${fr1(x.demPh)} % phased, impact ${x.tmvRe - x.tmvPh > 0 ? "+" : "−"}${fr1(Math.abs(x.tmvRe - x.tmvPh))} pt on projected TMV`);
-    if (x.devCa > 2) parts.push(`cumulative revenue at ${u(Math.round(x.cumReel))} M€ vs ${u(Math.round(x.cumPhased))} M€ phased (${x.fac > 1 ? "+" : "−"}${fr1(Math.abs(x.fac - 1) * 100)} %)`);
-    return { n: x.d.n, status: x.status, txt: parts.join(" · ") };
-  });
-  const projTotal = mon.reduce((s, x) => s + x.proj, 0);
-  const projTmv = mon.reduce((s, x) => s + x.tmvRe * x.d.budget, 0) / Math.max(1, depts.reduce((s, d) => s + d.budget, 0));
-  const projGap = projTotal - glob.budget;
-
-  /* Annual series for the curve (phased over 12 months, actual up to the current month) */
-  const totB = depts.reduce((s, d) => s + d.budget, 0) || 1;
-  const series = MOIS.map((_, m) => {
-    const cp = PHASAGE_CA.slice(0, m + 1).reduce((s, v) => s + v, 0) / 100;
-    let ph = 0, re = 0;
-    depts.forEach((d) => {
-      const dp = d.demarque + PHASAGE_DEM[m];
-      const dr = dp + REEL_DEM_ECART[d.n](m);
-      if (metric === "ca") { ph += d.budget * cp; re += d.budget * cp * REEL_CA_FACTEUR[d.n](m); }
-      else if (metric === "dem") { ph += (dp * d.budget) / totB; re += (dr * d.budget) / totB; }
-      else { ph += (tmvModel(d.tme, dp) * d.budget) / totB; re += (tmvModel(d.tme, dr) * d.budget) / totB; }
-    });
-    return { ph: +ph.toFixed(1), re: +re.toFixed(1) };
-  });
-  const CW = 640, CH = 210, pL = 52, pR = 14, pT = 14, pB = 26;
-  const vals = [...series.map((s) => s.ph), ...series.slice(0, month + 1).map((s) => s.re)];
-  const yMin = metric === "ca" ? 0 : Math.floor(Math.min(...vals) - 2);
-  const yMax = Math.ceil(Math.max(...vals) * (metric === "ca" ? 1.05 : 1) + (metric === "ca" ? 0 : 2));
-  const cx = (m) => pL + (m * (CW - pL - pR)) / 11;
-  const cy = (v) => pT + (1 - (v - yMin) / (yMax - yMin || 1)) * (CH - pT - pB);
-  const phPts = series.map((s, m) => `${cx(m)},${cy(s.ph)}`).join(" ");
-  const rePts = series.slice(0, month + 1).map((s, m) => `${cx(m)},${cy(s.re)}`).join(" ");
-  const ticks = [0, 1, 2, 3, 4].map((i) => yMin + ((yMax - yMin) * i) / 4);
-  const mLabel = { ca: "Cumulative revenue (M€)", dem: "Weighted markdown (%)", tmv: "Weighted TMV (%)" };
-
-  const STEPS = [["Global budget", "top-down"], ["Breakdown", "by department"], ["Submissions & arbitration", "bottom-up"], ["Monitoring", "annual"]];
+  const STEPS = [["Global budget", "top-down"], ["Breakdown", "by department"], ["Submissions & arbitration", "bottom-up"]];
 
   return (
     <div>
       {/* Stepper */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 18 }}>
         {STEPS.map(([t, sub], i) => {
           const n = i + 1, on = step === n, done = step > n;
           const c = on ? T.accent : done ? T.ok : T.faint;
@@ -2613,115 +2768,31 @@ function BudgetModule() {
                   ))}
                 </div>
               </div>
-              <div style={{ marginTop: 14 }}><button onClick={() => setStep(4)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}>Move to annual monitoring <ArrowRight size={14} /></button></div>
+              <div style={{ marginTop: 14, fontSize: 11.5, color: T.faint }}>Monthly steering of this framework lives in the Monitoring tab.</div>
             </div>
           )}
         </div>
       )}
 
-      {/* ---- Step 4 ---- */}
-      {step === 4 && (
-        <div style={cardB}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-            <TrendingUp size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Annual monitoring — monitoring agent</span>
-            <ResetBtn onClick={() => setMonth(0)} />
-          </div>
-          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actuals by department vs phased budget trajectory (Christmas peaks, January and July sales, back-to-school). Green ≤ 2 pts · orange 2 – 4 pts · red &gt; 4 pts.</div>
-          <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 11, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>Month</span>
-              <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 800, color: T.ink }}>{MOIS_LONG[month]} {month < 4 ? 2026 : 2027}</span>
-              <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.faint }}>{fr1(cumPh * 100)} % of annual budget phased</span>
-            </div>
-            <input type="range" min={0} max={11} value={month} onChange={(e) => setMonth(+e.target.value)} style={{ width: "100%", accentColor: T.accent }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: MONO, fontSize: 9.5, color: T.faint, marginTop: 4 }}>{MOIS.map((m) => <span key={m}>{m}</span>)}</div>
-          </div>
-
-          {/* Annual curve: phased trajectory vs cumulative actual up to the current month */}
-          <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-              <TrendingUp size={14} color={T.accent} /><span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>Fiscal year trajectory — {mLabel[metric]}</span>
-              <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                {[["ca", "Cumulative revenue"], ["dem", "Markdown"], ["tmv", "TMV"]].map(([id, l]) => (
-                  <button key={id} onClick={() => setMetric(id)} style={{ cursor: "pointer", background: metric === id ? T.accent : T.panel, color: metric === id ? "#ffffff" : T.sub, border: `1px solid ${metric === id ? T.accent : T.line}`, borderRadius: 999, padding: "4px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>{l}</button>
-                ))}
-              </span>
-            </div>
-            <svg viewBox={`0 0 ${CW} ${CH}`} style={{ width: "100%", height: "auto", display: "block" }}>
-              {ticks.map((t) => (
-                <g key={t}>
-                  <line x1={pL} x2={CW - pR} y1={cy(t)} y2={cy(t)} stroke={T.line} strokeWidth="1" />
-                  <text x={pL - 6} y={cy(t) + 3.5} textAnchor="end" fontSize="9.5" fontFamily={MONO} fill={T.faint}>{metric === "ca" ? u(Math.round(t)) : fr1(t)}</text>
-                </g>
-              ))}
-              {MOIS.map((m, i) => <text key={m} x={cx(i)} y={CH - 8} textAnchor="middle" fontSize="9.5" fontFamily={MONO} fill={i === month ? T.ink : T.faint} fontWeight={i === month ? 800 : 400}>{m}</text>)}
-              <line x1={cx(month)} x2={cx(month)} y1={pT} y2={CH - pB} stroke={T.accent} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
-              <polyline points={phPts} fill="none" stroke={T.blue} strokeWidth="2" strokeDasharray="6 4" strokeLinejoin="round" />
-              {series.map((s, m) => <circle key={"p" + m} cx={cx(m)} cy={cy(s.ph)} r="2.5" fill={T.blue} />)}
-              {month > 0 && <polyline points={rePts} fill="none" stroke={T.accent} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" />}
-              {series.slice(0, month + 1).map((s, m) => <circle key={"r" + m} cx={cx(m)} cy={cy(s.re)} r={m === month ? 4.5 : 3} fill={T.accent} stroke="#ffffff" strokeWidth="1.5" />)}
-              <text x={cx(month) + (month > 8 ? -8 : 8)} y={cy(series[month].re) - 9} textAnchor={month > 8 ? "end" : "start"} fontSize="10.5" fontFamily={MONO} fontWeight="800" fill={T.accent}>{metric === "ca" ? `${u(Math.round(series[month].re))} M€` : `${fr1(series[month].re)} %`}</text>
-            </svg>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 6, fontSize: 11, color: T.sub }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 18, borderTop: `2px dashed ${T.blue}` }} /> Phased budget trajectory (12 months)</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 18, borderTop: `2.6px solid ${T.accent}` }} /> Simulated actuals up to {MOIS_LONG[month]}</span>
-              <span style={{ marginLeft: "auto", fontFamily: MONO, color: T.faint }}>gap {metric === "ca" ? `${series[month].re - series[month].ph > 0 ? "+" : "−"}${u(Math.round(Math.abs(series[month].re - series[month].ph)))} M€` : `${series[month].re - series[month].ph > 0 ? "+" : "−"}${fr1(Math.abs(series[month].re - series[month].ph))} pt`}</span>
-            </div>
-          </div>
-          <div style={{ overflowX: "auto", marginBottom: 14 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead><tr>{["Department", "Status", "Cumulative revenue actual / phased", "Markdown actual / phased", "TMV actual / phased", "Max deviation"].map((c, j) => <th key={c} style={{ textAlign: j === 0 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
-              <tbody>
-                {mon.map((x) => (
-                  <tr key={x.d.n}>
-                    <td style={{ padding: "8px 8px", fontWeight: 800, color: T.ink, borderBottom: `1px solid ${T.lineSoft}` }}>{x.d.n}</td>
-                    <td style={{ textAlign: "right", borderBottom: `1px solid ${T.lineSoft}` }}><StatusChip s={x.status} /></td>
-                    <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{u(Math.round(x.cumReel))}</strong> / {u(Math.round(x.cumPhased))} M€</td>
-                    <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: x.devTmv > 2 ? T.bad : T.ink }}>{fr1(x.demRe)} %</strong> / {fr1(x.demPh)} %</td>
-                    <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{fr1(x.tmvRe)} %</strong> / {fr1(x.tmvPh)} %</td>
-                    <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, fontWeight: 800, color: x.status === "vert" ? T.ok : x.status === "orange" ? T.warn : T.bad, borderBottom: `1px solid ${T.lineSoft}` }}>{fr1(x.dev)} pts</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 10 }}>
-            <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" }}>
-              <span style={microLbl}>Monitoring agent alerts</span>
-              {alerts.length === 0 ? <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ok }}><Check size={14} /> All departments are on track.</div> : alerts.map((a) => (
-                <div key={a.n} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: T.ink, lineHeight: 1.5, marginBottom: 6 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, marginTop: 5, background: a.status === "orange" ? T.warn : T.bad }} />
-                  <span><strong>{a.n}</strong>: {a.txt}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ background: `${T.human}12`, border: `1px solid ${T.human}44`, borderRadius: 11, padding: "12px 13px" }}>
-              <span style={microLbl}>Year-end projection (at current pace)</span>
-              <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: projGap >= 0 ? T.ok : Math.abs(projGap) / glob.budget > 0.02 ? T.bad : T.warn }}>{u(Math.round(projTotal))} M€ <span style={{ fontSize: 12, color: T.sub }}>vs budget {u(glob.budget)} M€ ({projGap > 0 ? "+" : ""}{fr1((projGap / glob.budget) * 100)} %)</span></div>
-              <div style={{ fontSize: 11.5, color: T.sub, marginTop: 5, lineHeight: 1.5 }}>Weighted projected TMV <strong style={{ color: T.ink }}>{fr1(projTmv)} %</strong> vs {fr1(glob.tmv)} % budgeted ({projTmv - glob.tmv > 0 ? "+" : "−"}{fr1(Math.abs(projTmv - glob.tmv))} pt). {mon.filter((x) => x.status === "rouge").length ? `${mon.filter((x) => x.status === "rouge").map((x) => x.d.n).join(", ")} carries most of the gap.` : "No department off track."}</div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-function BudgetPage({ st }) {
+function BudgetPage({ st, fw }) {
   return (
     <div>
       <PageHeader
-        title="Budget & Financial Arbitration"
-        desc="Kiabi's annual budget ritual in four steps: set the global budget, break it down, arbitrate the submissions and steer the fiscal year month by month."
+        title="Financial Framework"
+        desc="Kiabi's annual budget framing in three steps: set the global budget, break it down by department and arbitrate the submissions. Monthly steering lives in the Monitoring tab."
         expert={{ role: "Performance Leader", txt: "Frames the envelopes, arbitrates the departments' submissions and orchestrates Group steering." }}
       />
-      <BudgetModule />
+      <BudgetModule fw={fw} />
     </div>
   );
 }
 
 /* ============================================================
-   Budget & CO₂ Arbitration — 4-step carbon ritual (green accent)
+   CO₂ Framework — 3-step carbon framing (green accent; monitoring moved to the Monitoring tab)
    ============================================================ */
 const G = T.ok;
 const cardG = { ...cardB, borderColor: `${G}44` };
@@ -2748,14 +2819,12 @@ const analyseCO2 = (c, obj) => {
   return { verdict, txt, ecart, ecartPct, attendu, mixOk, arithOk };
 };
 
-function CO2Module() {
+function CO2Module({ fw }) {
   const [step, setStep] = useState(1);
-  const [glob, setGlob] = useState({ ...CO2_GLOBAL });
-  const [depts, setDepts] = useState(CO2_DEPTS.map((d) => ({ ...d })));
+  const { co2Glob: glob, setCo2Glob: setGlob, co2Depts: depts, setCo2Depts: setDepts } = fw; /* shared with Monitoring */
   const [sentAt, setSentAt] = useState(null);
   const [mailOpen, setMailOpen] = useState(null);
   const [received, setReceived] = useState(false);
-  const [month, setMonth] = useState(0);
 
   const setG = (k, v) => setGlob((g) => ({ ...g, [k]: v }));
   const setD = (i, k, v) => setDepts((ds) => ds.map((d, j) => (j === i ? { ...d, [k]: v } : d)));
@@ -2775,44 +2844,12 @@ function CO2Module() {
   const intPond = sumCB / (sumCV * 1000);
   const aReprendre = analyses.filter((x) => x.a.verdict !== "Compliant").sort((x) => (x.a.verdict === "Inconsistency" ? -1 : 1));
 
-  /* Step 4 */
-  const cumPh = PHASAGE_CO2.slice(0, month + 1).reduce((s, v) => s + v, 0) / 100;
-  const cumFac = (n) => PHASAGE_CO2.slice(0, month + 1).reduce((s, v, i) => s + v * REEL_CO2_FACTEUR[n](i), 0) / (cumPh * 100);
-  const mon = depts.map((d) => {
-    const cumPhased = d.budget * cumPh;
-    const fac = cumFac(d.n);
-    const cumReel = cumPhased * fac;
-    const moisPh = (d.budget * PHASAGE_CO2[month]) / 100;
-    const moisRe = moisPh * REEL_CO2_FACTEUR[d.n](month);
-    const dev = Math.abs(fac - 1) * 100;
-    const status = dev <= 2 ? "vert" : dev <= 4 ? "orange" : "rouge";
-    return { d, cumPhased, cumReel, fac, moisPh, moisRe, dev, status, proj: d.budget * fac, cause: CO2_CAUSES[d.n] };
-  });
-  const alerts = mon.filter((x) => Math.abs(x.moisRe / x.moisPh - 1) > 0.02 || x.status !== "vert").map((x) => ({ n: x.d.n, status: x.status, txt: `${x.moisRe - x.moisPh >= 0 ? "+" : "−"}${u(Math.round(Math.abs(x.moisRe - x.moisPh)))} t CO₂e ${x.moisRe >= x.moisPh ? "above" : "below"} the trajectory in ${MOIS_LONG[month]}, ${x.cause}${x.status !== "vert" ? ` · cumulative ${x.fac > 1 ? "+" : "−"}${fr1(Math.abs(x.fac - 1) * 100)} %` : ""}` }));
-  const projTotal = mon.reduce((s, x) => s + x.proj, 0);
-  const projGap = projTotal - glob.budget;
-  const leviersT = CO2_LEVIERS.map((l) => ({ ...l, t: (projTotal * l.pct) / 100 }));
-  const leviersTot = leviersT.reduce((s, l) => s + l.t, 0);
-
-  /* Curve */
-  const series = MOIS.map((_, m) => {
-    const cp = PHASAGE_CO2.slice(0, m + 1).reduce((s, v) => s + v, 0) / 100;
-    let ph = 0, re = 0;
-    depts.forEach((d) => { ph += d.budget * cp; re += PHASAGE_CO2.slice(0, m + 1).reduce((s, v, i) => s + (d.budget * v * REEL_CO2_FACTEUR[d.n](i)) / 100, 0); });
-    return { ph: Math.round(ph), re: Math.round(re) };
-  });
-  const CW = 640, CH = 200, pL = 60, pR = 14, pT = 14, pB = 26;
-  const yMax = Math.ceil(Math.max(...series.map((s) => s.ph), ...series.slice(0, month + 1).map((s) => s.re)) * 1.05);
-  const cx = (m) => pL + (m * (CW - pL - pR)) / 11;
-  const cy = (v) => pT + (1 - v / (yMax || 1)) * (CH - pT - pB);
-  const ticks = [0, 1, 2, 3, 4].map((i) => (yMax * i) / 4);
-
-  const STEPS = [["Global CO₂ budget", "top-down"], ["Breakdown", "by department"], ["Submissions & arbitration", "bottom-up"], ["CO₂ monitoring", "annual"]];
+  const STEPS = [["Global CO₂ budget", "top-down"], ["Breakdown", "by department"], ["Submissions & arbitration", "bottom-up"]];
   const btn = (bg) => ({ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: bg, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS });
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 18 }}>
         {STEPS.map(([t, sub], i) => {
           const n = i + 1, on = step === n, done = step > n;
           const c = on || done ? G : T.faint;
@@ -2950,102 +2987,305 @@ function CO2Module() {
                   ))}
                 </div>
               </div>
-              <div style={{ marginTop: 14 }}><button onClick={() => setStep(4)} style={btn(G)}>Go to CO₂ monitoring <ArrowRight size={14} /></button></div>
+              <div style={{ marginTop: 14, fontSize: 11.5, color: T.faint }}>Monthly emissions steering of this framework lives in the Monitoring tab.</div>
             </div>
           )}
         </div>
       )}
 
-      {step === 4 && (
-        <div style={cardG}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-            <TrendingUp size={15} color={G} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Annual CO₂ monitoring — monitoring agent</span>
-            <ResetBtn onClick={() => setMonth(0)} />
-          </div>
-          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actual emissions vs phased trajectory (production peaks before Christmas and before the sales). Green ≤ 2 % · orange 2 – 4 % · red &gt; 4 % cumulative.</div>
-          <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 11, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>Month</span>
-              <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 800, color: T.ink }}>{MOIS_LONG[month]} {month < 4 ? 2026 : 2027}</span>
-              <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.faint }}>{fr1(cumPh * 100)} % of annual emissions phased</span>
-            </div>
-            <input type="range" min={0} max={11} value={month} onChange={(e) => setMonth(+e.target.value)} style={{ width: "100%", accentColor: G }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: MONO, fontSize: 9.5, color: T.faint, marginTop: 4 }}>{MOIS.map((m) => <span key={m}>{m}</span>)}</div>
-          </div>
-          <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><Leaf size={14} color={G} /><span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>Fiscal-year trajectory — cumulative emissions (t CO₂e)</span></div>
-            <svg viewBox={`0 0 ${CW} ${CH}`} style={{ width: "100%", height: "auto", display: "block" }}>
-              {ticks.map((t) => <g key={t}><line x1={pL} x2={CW - pR} y1={cy(t)} y2={cy(t)} stroke={T.line} strokeWidth="1" /><text x={pL - 6} y={cy(t) + 3.5} textAnchor="end" fontSize="9.5" fontFamily={MONO} fill={T.faint}>{u(Math.round(t))}</text></g>)}
-              {MOIS.map((m, i) => <text key={m} x={cx(i)} y={CH - 8} textAnchor="middle" fontSize="9.5" fontFamily={MONO} fill={i === month ? T.ink : T.faint} fontWeight={i === month ? 800 : 400}>{m}</text>)}
-              <line x1={cx(month)} x2={cx(month)} y1={pT} y2={CH - pB} stroke={G} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
-              <polyline points={series.map((s, m) => `${cx(m)},${cy(s.ph)}`).join(" ")} fill="none" stroke={T.blue} strokeWidth="2" strokeDasharray="6 4" strokeLinejoin="round" />
-              {month > 0 && <polyline points={series.slice(0, month + 1).map((s, m) => `${cx(m)},${cy(s.re)}`).join(" ")} fill="none" stroke={G} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" />}
-              {series.slice(0, month + 1).map((s, m) => <circle key={m} cx={cx(m)} cy={cy(s.re)} r={m === month ? 4.5 : 3} fill={G} stroke="#ffffff" strokeWidth="1.5" />)}
-              <text x={cx(month) + (month > 8 ? -8 : 8)} y={cy(series[month].re) - 9} textAnchor={month > 8 ? "end" : "start"} fontSize="10.5" fontFamily={MONO} fontWeight="800" fill={G}>{u(series[month].re)} t</text>
-            </svg>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 6, fontSize: 11, color: T.sub }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 18, borderTop: `2px dashed ${T.blue}` }} /> Phased CO₂ trajectory</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 18, borderTop: `2.6px solid ${G}` }} /> Actual emissions through {MOIS_LONG[month]}</span>
-              <span style={{ marginLeft: "auto", fontFamily: MONO, color: T.faint }}>gap {series[month].re - series[month].ph >= 0 ? "+" : "−"}{u(Math.abs(series[month].re - series[month].ph))} t</span>
-            </div>
-          </div>
-          <div style={{ overflowX: "auto", marginBottom: 14 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead><tr>{["Department", "Status", "Cumulative actual / phased", "Month actual / phased", "Cumulative gap", "Cause"].map((c, j) => <th key={c} style={{ textAlign: j === 0 || j === 5 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
-              <tbody>
-                {mon.map((x) => (
-                  <tr key={x.d.n}>
-                    <td style={{ padding: "8px 8px", fontWeight: 800, color: T.ink, borderBottom: `1px solid ${T.lineSoft}` }}>{x.d.n}</td>
-                    <td style={{ textAlign: "right", borderBottom: `1px solid ${T.lineSoft}` }}><StatusChip s={x.status} /></td>
-                    <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{u(Math.round(x.cumReel))}</strong> / {u(Math.round(x.cumPhased))} t</td>
-                    <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: x.moisRe > x.moisPh * 1.02 ? T.bad : T.ink }}>{u(Math.round(x.moisRe))}</strong> / {u(Math.round(x.moisPh))} t</td>
-                    <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, fontWeight: 800, color: x.status === "vert" ? T.ok : x.status === "orange" ? T.warn : T.bad, borderBottom: `1px solid ${T.lineSoft}` }}>{x.fac > 1 ? "+" : "−"}{fr1(x.dev)} %</td>
-                    <td style={{ padding: "8px 8px", fontSize: 11, color: T.sub, borderBottom: `1px solid ${T.lineSoft}` }}>{x.cause}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 10 }}>
-            <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" }}>
-              <span style={microLbl}>Monitoring agent alerts</span>
-              {alerts.length === 0 ? <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ok }}><Check size={14} /> All departments are on the carbon trajectory.</div> : alerts.map((a) => (
-                <div key={a.n} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: T.ink, lineHeight: 1.5, marginBottom: 6 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, marginTop: 5, background: a.status === "vert" ? T.warn : a.status === "orange" ? T.warn : T.bad }} />
-                  <span><strong>{a.n}</strong>: {a.txt}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ background: `${G}12`, border: `1px solid ${G}44`, borderRadius: 11, padding: "12px 13px" }}>
-              <span style={microLbl}>Year-end projection (at current pace)</span>
-              <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: projGap <= 0 ? T.ok : projGap / glob.budget > 0.02 ? T.bad : T.warn }}>{u(Math.round(projTotal))} t <span style={{ fontSize: 12, color: T.sub }}>vs budget {u(glob.budget)} t ({projGap > 0 ? "+" : ""}{fr1((projGap / glob.budget) * 100)} %)</span></div>
-              <span style={{ ...microLbl, marginTop: 10 }}>Available levers</span>
-              {leviersT.map((l) => (
-                <div key={l.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: `1px solid ${T.lineSoft}` }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 3, background: l.c, flexShrink: 0 }} />
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, minWidth: 70 }}>{l.n}</span>
-                  <span style={{ flex: 1, fontSize: 11, color: T.sub }}>{l.desc}</span>
-                  <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 800, color: T.ok, whiteSpace: "nowrap" }}>−{u(Math.round(l.t))} t</span>
-                </div>
-              ))}
-              <div style={{ fontSize: 11.5, color: T.sub, marginTop: 8, lineHeight: 1.5 }}>Cumulative potential <strong style={{ color: T.ink }}>−{u(Math.round(leviersTot))} t</strong>: {projGap > 0 ? (leviersTot >= projGap ? "sufficient to return within the envelope." : `insufficient, ${u(Math.round(projGap - leviersTot))} t would remain to be arbitrated.`) : "the trajectory is already below the envelope; the levers provide a safety margin."}</div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-function CO2Page() {
+function CO2Page({ fw }) {
   return (
     <div>
       <PageHeader
-        title="Budget & CO₂ Arbitration"
-        desc="Kiabi's annual carbon ritual in four steps: set the global CO₂ budget, break it down by department, arbitrate the submissions and steer emissions month by month."
+        title="CO₂ Framework"
+        desc="Kiabi's annual carbon framing in three steps: set the global CO₂ budget, break it down by department and arbitrate the submissions. Monthly emissions steering lives in the Monitoring tab."
         expert={{ role: "Performance Leader", txt: "Frames the carbon envelope, arbitrates the departments' submissions and steers the Group CO₂ trajectory." }}
       />
-      <CO2Module />
+      <CO2Module fw={fw} />
+    </div>
+  );
+}
+
+/* ============================================================
+   Monitoring — single annual follow-up for the financial and CO₂ frameworks
+   (former step 4 of BudgetModule and CO2Module, fed by the shared framing state)
+   ============================================================ */
+function FinancialMonitoring({ glob, depts }) {
+  const [month, setMonth] = useState(0);
+  const [metric, setMetric] = useState("ca");
+  const cumPh = PHASAGE_CA.slice(0, month + 1).reduce((s, v) => s + v, 0) / 100;
+  const mon = depts.map((d) => {
+    const cumPhased = d.budget * cumPh;
+    const fac = REEL_CA_FACTEUR[d.n](month);
+    const cumReel = cumPhased * fac;
+    const demPh = +(d.demarque + PHASAGE_DEM[month]).toFixed(1);
+    const demRe = +(demPh + REEL_DEM_ECART[d.n](month)).toFixed(1);
+    const tmvPh = tmvModel(d.tme, demPh);
+    const tmvRe = tmvModel(d.tme, demRe);
+    const devCa = Math.abs(fac - 1) * 100;
+    const devTmv = Math.abs(tmvRe - tmvPh);
+    const dev = Math.max(devCa, devTmv);
+    const status = dev <= 2 ? "vert" : dev <= 4 ? "orange" : "rouge";
+    return { d, cumPhased, cumReel, fac, demPh, demRe, tmvPh, tmvRe, devCa, devTmv, dev, status, proj: d.budget * fac };
+  });
+  const alerts = mon.filter((x) => x.status !== "vert").map((x) => {
+    const parts = [];
+    if (x.devTmv > 2) parts.push(`markdown at ${fr1(x.demRe)} % in ${MOIS_LONG[month]} vs ${fr1(x.demPh)} % phased, impact ${x.tmvRe - x.tmvPh > 0 ? "+" : "−"}${fr1(Math.abs(x.tmvRe - x.tmvPh))} pt on projected TMV`);
+    if (x.devCa > 2) parts.push(`cumulative revenue at ${u(Math.round(x.cumReel))} M€ vs ${u(Math.round(x.cumPhased))} M€ phased (${x.fac > 1 ? "+" : "−"}${fr1(Math.abs(x.fac - 1) * 100)} %)`);
+    return { n: x.d.n, status: x.status, txt: parts.join(" · ") };
+  });
+  const projTotal = mon.reduce((s, x) => s + x.proj, 0);
+  const projTmv = mon.reduce((s, x) => s + x.tmvRe * x.d.budget, 0) / Math.max(1, depts.reduce((s, d) => s + d.budget, 0));
+  const projGap = projTotal - glob.budget;
+
+  /* Annual series for the curve (phased over 12 months, actual up to the current month) */
+  const totB = depts.reduce((s, d) => s + d.budget, 0) || 1;
+  const series = MOIS.map((_, m) => {
+    const cp = PHASAGE_CA.slice(0, m + 1).reduce((s, v) => s + v, 0) / 100;
+    let ph = 0, re = 0;
+    depts.forEach((d) => {
+      const dp = d.demarque + PHASAGE_DEM[m];
+      const dr = dp + REEL_DEM_ECART[d.n](m);
+      if (metric === "ca") { ph += d.budget * cp; re += d.budget * cp * REEL_CA_FACTEUR[d.n](m); }
+      else if (metric === "dem") { ph += (dp * d.budget) / totB; re += (dr * d.budget) / totB; }
+      else { ph += (tmvModel(d.tme, dp) * d.budget) / totB; re += (tmvModel(d.tme, dr) * d.budget) / totB; }
+    });
+    return { ph: +ph.toFixed(1), re: +re.toFixed(1) };
+  });
+  const CW = 640, CH = 210, pL = 52, pR = 14, pT = 14, pB = 26;
+  const vals = [...series.map((s) => s.ph), ...series.slice(0, month + 1).map((s) => s.re)];
+  const yMin = metric === "ca" ? 0 : Math.floor(Math.min(...vals) - 2);
+  const yMax = Math.ceil(Math.max(...vals) * (metric === "ca" ? 1.05 : 1) + (metric === "ca" ? 0 : 2));
+  const cx = (m) => pL + (m * (CW - pL - pR)) / 11;
+  const cy = (v) => pT + (1 - (v - yMin) / (yMax - yMin || 1)) * (CH - pT - pB);
+  const phPts = series.map((s, m) => `${cx(m)},${cy(s.ph)}`).join(" ");
+  const rePts = series.slice(0, month + 1).map((s, m) => `${cx(m)},${cy(s.re)}`).join(" ");
+  const ticks = [0, 1, 2, 3, 4].map((i) => yMin + ((yMax - yMin) * i) / 4);
+  const mLabel = { ca: "Cumulative revenue (M€)", dem: "Weighted markdown (%)", tmv: "Weighted TMV (%)" };
+
+  return (
+    <div style={cardB}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+        <TrendingUp size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Financial monitoring — monitoring agent</span>
+        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(glob.budget)} M€ · {depts.length} departments from the Financial Framework</span>
+        <ResetBtn onClick={() => setMonth(0)} />
+      </div>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actuals by department vs phased budget trajectory (Christmas peaks, January and July sales, back-to-school). Green ≤ 2 pts · orange 2 – 4 pts · red &gt; 4 pts.</div>
+      <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 11, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>Month</span>
+          <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 800, color: T.ink }}>{MOIS_LONG[month]} {month < 4 ? 2026 : 2027}</span>
+          <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.faint }}>{fr1(cumPh * 100)} % of annual budget phased</span>
+        </div>
+        <input type="range" min={0} max={11} value={month} onChange={(e) => setMonth(+e.target.value)} style={{ width: "100%", accentColor: T.accent }} />
+        <div style={{ display: "flex", justifyContent: "space-between", fontFamily: MONO, fontSize: 9.5, color: T.faint, marginTop: 4 }}>{MOIS.map((m) => <span key={m}>{m}</span>)}</div>
+      </div>
+
+      {/* Annual curve: phased trajectory vs cumulative actual up to the current month */}
+      <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <TrendingUp size={14} color={T.accent} /><span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>Fiscal year trajectory — {mLabel[metric]}</span>
+          <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            {[["ca", "Cumulative revenue"], ["dem", "Markdown"], ["tmv", "TMV"]].map(([id, l]) => (
+              <button key={id} onClick={() => setMetric(id)} style={{ cursor: "pointer", background: metric === id ? T.accent : T.panel, color: metric === id ? "#ffffff" : T.sub, border: `1px solid ${metric === id ? T.accent : T.line}`, borderRadius: 999, padding: "4px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>{l}</button>
+            ))}
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${CW} ${CH}`} style={{ width: "100%", height: "auto", display: "block" }}>
+          {ticks.map((t) => (
+            <g key={t}>
+              <line x1={pL} x2={CW - pR} y1={cy(t)} y2={cy(t)} stroke={T.line} strokeWidth="1" />
+              <text x={pL - 6} y={cy(t) + 3.5} textAnchor="end" fontSize="9.5" fontFamily={MONO} fill={T.faint}>{metric === "ca" ? u(Math.round(t)) : fr1(t)}</text>
+            </g>
+          ))}
+          {MOIS.map((m, i) => <text key={m} x={cx(i)} y={CH - 8} textAnchor="middle" fontSize="9.5" fontFamily={MONO} fill={i === month ? T.ink : T.faint} fontWeight={i === month ? 800 : 400}>{m}</text>)}
+          <line x1={cx(month)} x2={cx(month)} y1={pT} y2={CH - pB} stroke={T.accent} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
+          <polyline points={phPts} fill="none" stroke={T.blue} strokeWidth="2" strokeDasharray="6 4" strokeLinejoin="round" />
+          {series.map((s, m) => <circle key={"p" + m} cx={cx(m)} cy={cy(s.ph)} r="2.5" fill={T.blue} />)}
+          {month > 0 && <polyline points={rePts} fill="none" stroke={T.accent} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" />}
+          {series.slice(0, month + 1).map((s, m) => <circle key={"r" + m} cx={cx(m)} cy={cy(s.re)} r={m === month ? 4.5 : 3} fill={T.accent} stroke="#ffffff" strokeWidth="1.5" />)}
+          <text x={cx(month) + (month > 8 ? -8 : 8)} y={cy(series[month].re) - 9} textAnchor={month > 8 ? "end" : "start"} fontSize="10.5" fontFamily={MONO} fontWeight="800" fill={T.accent}>{metric === "ca" ? `${u(Math.round(series[month].re))} M€` : `${fr1(series[month].re)} %`}</text>
+        </svg>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 6, fontSize: 11, color: T.sub }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 18, borderTop: `2px dashed ${T.blue}` }} /> Phased budget trajectory (12 months)</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 18, borderTop: `2.6px solid ${T.accent}` }} /> Simulated actuals up to {MOIS_LONG[month]}</span>
+          <span style={{ marginLeft: "auto", fontFamily: MONO, color: T.faint }}>gap {metric === "ca" ? `${series[month].re - series[month].ph > 0 ? "+" : "−"}${u(Math.round(Math.abs(series[month].re - series[month].ph)))} M€` : `${series[month].re - series[month].ph > 0 ? "+" : "−"}${fr1(Math.abs(series[month].re - series[month].ph))} pt`}</span>
+        </div>
+      </div>
+      <div style={{ overflowX: "auto", marginBottom: 14 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead><tr>{["Department", "Status", "Cumulative revenue actual / phased", "Markdown actual / phased", "TMV actual / phased", "Max deviation"].map((c, j) => <th key={c} style={{ textAlign: j === 0 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
+          <tbody>
+            {mon.map((x) => (
+              <tr key={x.d.n}>
+                <td style={{ padding: "8px 8px", fontWeight: 800, color: T.ink, borderBottom: `1px solid ${T.lineSoft}` }}>{x.d.n}</td>
+                <td style={{ textAlign: "right", borderBottom: `1px solid ${T.lineSoft}` }}><StatusChip s={x.status} /></td>
+                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{u(Math.round(x.cumReel))}</strong> / {u(Math.round(x.cumPhased))} M€</td>
+                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: x.devTmv > 2 ? T.bad : T.ink }}>{fr1(x.demRe)} %</strong> / {fr1(x.demPh)} %</td>
+                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{fr1(x.tmvRe)} %</strong> / {fr1(x.tmvPh)} %</td>
+                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, fontWeight: 800, color: x.status === "vert" ? T.ok : x.status === "orange" ? T.warn : T.bad, borderBottom: `1px solid ${T.lineSoft}` }}>{fr1(x.dev)} pts</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 10 }}>
+        <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" }}>
+          <span style={microLbl}>Monitoring agent alerts</span>
+          {alerts.length === 0 ? <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ok }}><Check size={14} /> All departments are on track.</div> : alerts.map((a) => (
+            <div key={a.n} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: T.ink, lineHeight: 1.5, marginBottom: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, marginTop: 5, background: a.status === "orange" ? T.warn : T.bad }} />
+              <span><strong>{a.n}</strong>: {a.txt}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: `${T.human}12`, border: `1px solid ${T.human}44`, borderRadius: 11, padding: "12px 13px" }}>
+          <span style={microLbl}>Year-end projection (at current pace)</span>
+          <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: projGap >= 0 ? T.ok : Math.abs(projGap) / glob.budget > 0.02 ? T.bad : T.warn }}>{u(Math.round(projTotal))} M€ <span style={{ fontSize: 12, color: T.sub }}>vs budget {u(glob.budget)} M€ ({projGap > 0 ? "+" : ""}{fr1((projGap / glob.budget) * 100)} %)</span></div>
+          <div style={{ fontSize: 11.5, color: T.sub, marginTop: 5, lineHeight: 1.5 }}>Weighted projected TMV <strong style={{ color: T.ink }}>{fr1(projTmv)} %</strong> vs {fr1(glob.tmv)} % budgeted ({projTmv - glob.tmv > 0 ? "+" : "−"}{fr1(Math.abs(projTmv - glob.tmv))} pt). {mon.filter((x) => x.status === "rouge").length ? `${mon.filter((x) => x.status === "rouge").map((x) => x.d.n).join(", ")} carries most of the gap.` : "No department off track."}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CO2Monitoring({ glob, depts }) {
+  const [month, setMonth] = useState(0);
+  const cumPh = PHASAGE_CO2.slice(0, month + 1).reduce((s, v) => s + v, 0) / 100;
+  const cumFac = (n) => PHASAGE_CO2.slice(0, month + 1).reduce((s, v, i) => s + v * REEL_CO2_FACTEUR[n](i), 0) / (cumPh * 100);
+  const mon = depts.map((d) => {
+    const cumPhased = d.budget * cumPh;
+    const fac = cumFac(d.n);
+    const cumReel = cumPhased * fac;
+    const moisPh = (d.budget * PHASAGE_CO2[month]) / 100;
+    const moisRe = moisPh * REEL_CO2_FACTEUR[d.n](month);
+    const dev = Math.abs(fac - 1) * 100;
+    const status = dev <= 2 ? "vert" : dev <= 4 ? "orange" : "rouge";
+    return { d, cumPhased, cumReel, fac, moisPh, moisRe, dev, status, proj: d.budget * fac, cause: CO2_CAUSES[d.n] };
+  });
+  const alerts = mon.filter((x) => Math.abs(x.moisRe / x.moisPh - 1) > 0.02 || x.status !== "vert").map((x) => ({ n: x.d.n, status: x.status, txt: `${x.moisRe - x.moisPh >= 0 ? "+" : "−"}${u(Math.round(Math.abs(x.moisRe - x.moisPh)))} t CO₂e ${x.moisRe >= x.moisPh ? "above" : "below"} the trajectory in ${MOIS_LONG[month]}, ${x.cause}${x.status !== "vert" ? ` · cumulative ${x.fac > 1 ? "+" : "−"}${fr1(Math.abs(x.fac - 1) * 100)} %` : ""}` }));
+  const projTotal = mon.reduce((s, x) => s + x.proj, 0);
+  const projGap = projTotal - glob.budget;
+  const leviersT = CO2_LEVIERS.map((l) => ({ ...l, t: (projTotal * l.pct) / 100 }));
+  const leviersTot = leviersT.reduce((s, l) => s + l.t, 0);
+
+  /* Curve */
+  const series = MOIS.map((_, m) => {
+    const cp = PHASAGE_CO2.slice(0, m + 1).reduce((s, v) => s + v, 0) / 100;
+    let ph = 0, re = 0;
+    depts.forEach((d) => { ph += d.budget * cp; re += PHASAGE_CO2.slice(0, m + 1).reduce((s, v, i) => s + (d.budget * v * REEL_CO2_FACTEUR[d.n](i)) / 100, 0); });
+    return { ph: Math.round(ph), re: Math.round(re) };
+  });
+  const CW = 640, CH = 200, pL = 60, pR = 14, pT = 14, pB = 26;
+  const yMax = Math.ceil(Math.max(...series.map((s) => s.ph), ...series.slice(0, month + 1).map((s) => s.re)) * 1.05);
+  const cx = (m) => pL + (m * (CW - pL - pR)) / 11;
+  const cy = (v) => pT + (1 - v / (yMax || 1)) * (CH - pT - pB);
+  const ticks = [0, 1, 2, 3, 4].map((i) => (yMax * i) / 4);
+
+  return (
+    <div style={cardG}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+        <TrendingUp size={15} color={G} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>CO₂ monitoring — monitoring agent</span>
+        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(Math.round(glob.budget))} t CO₂e · {depts.length} departments from the CO₂ Framework</span>
+        <ResetBtn onClick={() => setMonth(0)} />
+      </div>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actual emissions vs phased trajectory (production peaks before Christmas and before the sales). Green ≤ 2 % · orange 2 – 4 % · red &gt; 4 % cumulative.</div>
+      <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 11, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>Month</span>
+          <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 800, color: T.ink }}>{MOIS_LONG[month]} {month < 4 ? 2026 : 2027}</span>
+          <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.faint }}>{fr1(cumPh * 100)} % of annual emissions phased</span>
+        </div>
+        <input type="range" min={0} max={11} value={month} onChange={(e) => setMonth(+e.target.value)} style={{ width: "100%", accentColor: G }} />
+        <div style={{ display: "flex", justifyContent: "space-between", fontFamily: MONO, fontSize: 9.5, color: T.faint, marginTop: 4 }}>{MOIS.map((m) => <span key={m}>{m}</span>)}</div>
+      </div>
+      <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><Leaf size={14} color={G} /><span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>Fiscal-year trajectory — cumulative emissions (t CO₂e)</span></div>
+        <svg viewBox={`0 0 ${CW} ${CH}`} style={{ width: "100%", height: "auto", display: "block" }}>
+          {ticks.map((t) => <g key={t}><line x1={pL} x2={CW - pR} y1={cy(t)} y2={cy(t)} stroke={T.line} strokeWidth="1" /><text x={pL - 6} y={cy(t) + 3.5} textAnchor="end" fontSize="9.5" fontFamily={MONO} fill={T.faint}>{u(Math.round(t))}</text></g>)}
+          {MOIS.map((m, i) => <text key={m} x={cx(i)} y={CH - 8} textAnchor="middle" fontSize="9.5" fontFamily={MONO} fill={i === month ? T.ink : T.faint} fontWeight={i === month ? 800 : 400}>{m}</text>)}
+          <line x1={cx(month)} x2={cx(month)} y1={pT} y2={CH - pB} stroke={G} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
+          <polyline points={series.map((s, m) => `${cx(m)},${cy(s.ph)}`).join(" ")} fill="none" stroke={T.blue} strokeWidth="2" strokeDasharray="6 4" strokeLinejoin="round" />
+          {month > 0 && <polyline points={series.slice(0, month + 1).map((s, m) => `${cx(m)},${cy(s.re)}`).join(" ")} fill="none" stroke={G} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" />}
+          {series.slice(0, month + 1).map((s, m) => <circle key={m} cx={cx(m)} cy={cy(s.re)} r={m === month ? 4.5 : 3} fill={G} stroke="#ffffff" strokeWidth="1.5" />)}
+          <text x={cx(month) + (month > 8 ? -8 : 8)} y={cy(series[month].re) - 9} textAnchor={month > 8 ? "end" : "start"} fontSize="10.5" fontFamily={MONO} fontWeight="800" fill={G}>{u(series[month].re)} t</text>
+        </svg>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 6, fontSize: 11, color: T.sub }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 18, borderTop: `2px dashed ${T.blue}` }} /> Phased CO₂ trajectory</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 18, borderTop: `2.6px solid ${G}` }} /> Actual emissions through {MOIS_LONG[month]}</span>
+          <span style={{ marginLeft: "auto", fontFamily: MONO, color: T.faint }}>gap {series[month].re - series[month].ph >= 0 ? "+" : "−"}{u(Math.abs(series[month].re - series[month].ph))} t</span>
+        </div>
+      </div>
+      <div style={{ overflowX: "auto", marginBottom: 14 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead><tr>{["Department", "Status", "Cumulative actual / phased", "Month actual / phased", "Cumulative gap", "Cause"].map((c, j) => <th key={c} style={{ textAlign: j === 0 || j === 5 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
+          <tbody>
+            {mon.map((x) => (
+              <tr key={x.d.n}>
+                <td style={{ padding: "8px 8px", fontWeight: 800, color: T.ink, borderBottom: `1px solid ${T.lineSoft}` }}>{x.d.n}</td>
+                <td style={{ textAlign: "right", borderBottom: `1px solid ${T.lineSoft}` }}><StatusChip s={x.status} /></td>
+                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{u(Math.round(x.cumReel))}</strong> / {u(Math.round(x.cumPhased))} t</td>
+                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: x.moisRe > x.moisPh * 1.02 ? T.bad : T.ink }}>{u(Math.round(x.moisRe))}</strong> / {u(Math.round(x.moisPh))} t</td>
+                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, fontWeight: 800, color: x.status === "vert" ? T.ok : x.status === "orange" ? T.warn : T.bad, borderBottom: `1px solid ${T.lineSoft}` }}>{x.fac > 1 ? "+" : "−"}{fr1(x.dev)} %</td>
+                <td style={{ padding: "8px 8px", fontSize: 11, color: T.sub, borderBottom: `1px solid ${T.lineSoft}` }}>{x.cause}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 10 }}>
+        <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" }}>
+          <span style={microLbl}>Monitoring agent alerts</span>
+          {alerts.length === 0 ? <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ok }}><Check size={14} /> All departments are on the carbon trajectory.</div> : alerts.map((a) => (
+            <div key={a.n} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: T.ink, lineHeight: 1.5, marginBottom: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, marginTop: 5, background: a.status === "vert" ? T.warn : a.status === "orange" ? T.warn : T.bad }} />
+              <span><strong>{a.n}</strong>: {a.txt}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: `${G}12`, border: `1px solid ${G}44`, borderRadius: 11, padding: "12px 13px" }}>
+          <span style={microLbl}>Year-end projection (at current pace)</span>
+          <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: projGap <= 0 ? T.ok : projGap / glob.budget > 0.02 ? T.bad : T.warn }}>{u(Math.round(projTotal))} t <span style={{ fontSize: 12, color: T.sub }}>vs budget {u(glob.budget)} t ({projGap > 0 ? "+" : ""}{fr1((projGap / glob.budget) * 100)} %)</span></div>
+          <span style={{ ...microLbl, marginTop: 10 }}>Available levers</span>
+          {leviersT.map((l) => (
+            <div key={l.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: `1px solid ${T.lineSoft}` }}>
+              <span style={{ width: 9, height: 9, borderRadius: 3, background: l.c, flexShrink: 0 }} />
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, minWidth: 70 }}>{l.n}</span>
+              <span style={{ flex: 1, fontSize: 11, color: T.sub }}>{l.desc}</span>
+              <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 800, color: T.ok, whiteSpace: "nowrap" }}>−{u(Math.round(l.t))} t</span>
+            </div>
+          ))}
+          <div style={{ fontSize: 11.5, color: T.sub, marginTop: 8, lineHeight: 1.5 }}>Cumulative potential <strong style={{ color: T.ink }}>−{u(Math.round(leviersTot))} t</strong>: {projGap > 0 ? (leviersTot >= projGap ? "sufficient to return within the envelope." : `insufficient, ${u(Math.round(projGap - leviersTot))} t would remain to be arbitrated.`) : "the trajectory is already below the envelope; the levers provide a safety margin."}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonitoringPage({ fw }) {
+  const [view, setView] = useState("financial");
+  return (
+    <div>
+      <PageHeader
+        title="Monitoring"
+        desc="Single annual follow-up of the fiscal year: financial and CO₂ trajectories month by month, fed live by the Financial Framework and CO₂ Framework."
+        expert={{ role: "Performance Leader", txt: "Monitors actuals against the phased frameworks, raises alerts and projects the year-end for the Group." }}
+      />
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        {[{ id: "financial", label: "Financial monitoring", icon: Wallet, c: T.accent }, { id: "co2", label: "CO₂ monitoring", icon: Leaf, c: G }].map((v) => {
+          const on = view === v.id;
+          return (
+            <button key={v.id} onClick={() => setView(v.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: on ? v.c : T.panel2, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? v.c : T.line}`, borderRadius: 999, padding: "8px 15px", fontSize: 12, fontWeight: 700, fontFamily: SANS }}>
+              <v.icon size={13} /> {v.label}
+            </button>
+          );
+        })}
+      </div>
+      {view === "financial" ? <FinancialMonitoring glob={fw.budgetGlob} depts={fw.budgetDepts} /> : <CO2Monitoring glob={fw.co2Glob} depts={fw.co2Depts} />}
     </div>
   );
 }
@@ -3055,7 +3295,7 @@ function CO2Page() {
    ============================================================ */
 
 export default function App() {
-  const [tab, setTab] = useState("performance");
+  const [tab, setTab] = useState("financial");
   const [selId, setSelId] = useState(PRODUITS[0].id);
   const [agentId, setAgentId] = useState("essentiel");
   const [territoire, setTerritoire] = useState("Core");
@@ -3072,6 +3312,16 @@ export default function App() {
   const [rejected, setRejected] = useState(new Set());
   const [note, setNote] = useState("");
   const [perfRules, setPerfRules] = useState({ caEnvelope: 60, carbonEnvelope: 6000, minMargin: 54, maxProductCO2: 2.0 });
+  /* Shared framing state (Financial / CO₂ Framework) also read by Monitoring */
+  const [budgetGlob, setBudgetGlob] = useState({ ...BUDGET_GLOBAL });
+  const [budgetDepts, setBudgetDepts] = useState(BUDGET_DEPTS.map((d) => ({ ...d })));
+  const [co2Glob, setCo2Glob] = useState({ ...CO2_GLOBAL });
+  const [co2Depts, setCo2Depts] = useState(CO2_DEPTS.map((d) => ({ ...d })));
+  /* Market brief (written in Market Framework, read-only elsewhere), product sheet progress, approval snapshots */
+  const [marketBrief, setMarketBrief] = useState(null);
+  const [sheets, setSheets] = useState({});
+  const [snapshots, setSnapshots] = useState({});
+  const [reopened, setReopened] = useState(new Set());
 
   const lowCarbon = agentId === "bascarbone";
   const sel = PRODUITS.find((p) => p.id === selId) || PRODUITS[0];
@@ -3100,6 +3350,15 @@ export default function App() {
     return b;
   }, [perfRules, collectionCO2, lowCarbon, delta]);
 
+  /* Frozen copy of every choice of an offer at approval time (per product id) */
+  const buildSnapshot = (p) => {
+    const ag = AGENTS.find((a) => a.id === agentId) || null;
+    const scId = scenMap[p.id] ?? (lowCarbon ? "px" : "mx");
+    const sc = p.scenarios.find((x) => x.id === scId) || p.scenarios[0];
+    const pvi = pvcMap[p.id] ?? p.prix, volume = volMap[p.id] ?? p.volume, revient = Math.max(0.1, +((p.revient + delta.rev).toFixed(2)));
+    return { at: new Date(), name: p.name, segment: p.segment, pvi, volume, revient, marge: Math.round(((pvi - revient) / pvi) * 100), co2: co2Eff(p), lead: Math.max(7, sc.lead + delta.lead), territoire, zone, agentId, agentName: ag ? ag.name : null, scenId: sc.id, scenName: sc.name, colIdx, coloris: p.coloris[colIdx] ? `${p.coloris[colIdx][0]} (${p.id.toUpperCase()}-${String(colIdx + 1).padStart(2, "0")})` : null, levers: [...levers], leverNames: AMELIO.flatMap((g) => g.levers).filter((lv) => levers.has(lv.id)).map((lv) => lv.t), sheet: sheets[p.id] || null };
+  };
+
   const st = {
     selId, setSelId: (id) => { setSelId(id); setColIdx(0); setNote(""); }, sel,
     agentId, setAgentId, lowCarbon,
@@ -3123,17 +3382,28 @@ export default function App() {
     submit: (id) => { setSubmitted((s) => new Set(s).add(id)); setReturned((s) => { const n = new Set(s); n.delete(id); return n; }); },
     validate: (id) => setValidated((s) => new Set(s).add(id)),
     sendBack: (id) => { setReturned((s) => new Set(s).add(id)); setSubmitted((s) => { const n = new Set(s); n.delete(id); return n; }); },
-    approve: (id) => { setApproved((s) => new Set(s).add(id)); setRejected((s) => { const n = new Set(s); n.delete(id); return n; }); },
+    approve: (id) => { const p = PRODUITS.find((x) => x.id === id); if (p) setSnapshots((m) => ({ ...m, [id]: buildSnapshot(p) })); setApproved((s) => new Set(s).add(id)); setRejected((s) => { const n = new Set(s); n.delete(id); return n; }); setReopened((r) => { const n = new Set(r); n.delete(id); return n; }); },
     reject: (id) => setRejected((s) => new Set(s).add(id)),
     unapprove: (id) => { setApproved((s) => { const n = new Set(s); n.delete(id); return n; }); setNote(""); },
+    /* approved offers are frozen until explicitly reopened; reopening restores the snapshot choices */
+    isLocked: (id) => approved.has(id) && !reopened.has(id),
+    isReopened: (id) => approved.has(id) && reopened.has(id),
+    snapshotOf: (id) => snapshots[id],
+    reopen: (id) => { const sn = snapshots[id]; if (sn) { setAgentId(sn.agentId); setTerritoire(sn.territoire); setZone(sn.zone); setColIdx(sn.colIdx); setLevers(new Set(sn.levers)); setPvcMap((m) => ({ ...m, [id]: sn.pvi })); setVolMap((m) => ({ ...m, [id]: sn.volume })); setScenMap((m) => ({ ...m, [id]: sn.scenId })); } setReopened((r) => new Set(r).add(id)); setNote(""); },
+    setSheet: (id, info) => setSheets((m) => ({ ...m, [id]: info })),
+    marketBrief, setMarketBrief, setTab,
   };
+  const fw = { budgetGlob, setBudgetGlob, budgetDepts, setBudgetDepts, co2Glob, setCo2Glob, co2Depts, setCo2Depts };
 
   const TABS = [
-    { id: "performance", label: "Budget & Financial Arbitration", icon: Scale },
-    { id: "co2", label: "Budget & CO₂ Arbitration", icon: Leaf },
-    { id: "design", label: "Offer & Collection", icon: Baby },
+    { id: "financial", label: "Financial Framework", icon: Scale },
+    { id: "co2", label: "CO₂ Framework", icon: Leaf },
+    { id: "market", label: "Market Framework", icon: Crown },
+    { id: "collection", label: "Collection Framework", icon: LayoutGrid },
+    { id: "product", label: "Product Manager", icon: Baby },
     { id: "gtm", label: "Go to Market", icon: ShoppingBag },
     { id: "itfas", label: "KFI", icon: Factory },
+    { id: "monitoring", label: "Monitoring", icon: TrendingUp },
   ];
 
   return (
@@ -3157,11 +3427,14 @@ export default function App() {
             );
           })}
         </div>
-        {tab === "performance" && <BudgetPage st={st} />}
-        {tab === "co2" && <CO2Page />}
-        {tab === "design" && <OffrePage st={st} />}
+        {tab === "financial" && <BudgetPage st={st} fw={fw} />}
+        {tab === "co2" && <CO2Page fw={fw} />}
+        {tab === "market" && <MarketFrameworkPage st={st} />}
+        {tab === "collection" && <CollectionFrameworkPage st={st} />}
+        {tab === "product" && <ProductManagerPage st={st} />}
         {tab === "gtm" && <GTMPage st={st} />}
         {tab === "itfas" && <ProductionPage st={st} />}
+        {tab === "monitoring" && <MonitoringPage fw={fw} />}
       </div>
     </div>
   );
