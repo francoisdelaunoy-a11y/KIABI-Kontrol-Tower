@@ -194,6 +194,11 @@ const CO2_COPIES = [
 ];
 const PHASAGE_CO2 = [9, 11, 12, 6, 6, 7, 9, 8, 10, 10, 6, 6];  /* % of annual emissions — production peaks before Christmas and before the sales */
 const REEL_CO2_FACTEUR = { "Offers & Collections": () => 0.99, "Operations": (m) => (m >= 6 ? 1.1 : 1.01), "KFI - Kiabi Fashion Industry": () => 0.98, "Retail": (m) => (m >= 9 ? 1.03 : 1.005) };
+/* Simulated actuals: a monitored line carries its own factors (offer perimeters) or falls back to the department maps */
+const caFacOf = (d) => d.caFac || REEL_CA_FACTEUR[d.n] || (() => 1);
+const demGapOf = (d) => d.demGap || REEL_DEM_ECART[d.n] || (() => 0);
+const co2FacOf = (d) => d.co2Fac || REEL_CO2_FACTEUR[d.n] || (() => 1);
+const causeOf = (d) => d.cause || CO2_CAUSES[d.n] || "";
 const CO2_CAUSES = { "Offers & Collections": "recycled material share on target", "Operations": "air freight on the rise", "KFI - Kiabi Fashion Industry": "optimised industrial process", "Retail": "store energy consumption on the rise" };
 const CO2_LEVIERS = [
   { n: "Material", desc: "+10 pts of recycled cotton on bodysuits", pct: 6, c: "#3fb27f" },
@@ -3198,16 +3203,17 @@ function CO2Page({ fw }) {
    Monitoring — single annual follow-up for the financial and CO₂ frameworks
    (former step 4 of BudgetModule and CO2Module, fed by the shared framing state)
    ============================================================ */
-function FinancialMonitoring({ glob, depts }) {
+function FinancialMonitoring({ glob, depts, scope }) {
   const [month, setMonth] = useState(0);
+  const fm = (v) => (Math.abs(v) < 100 ? fr1(v) : u(Math.round(v)));
   const [metric, setMetric] = useState("ca");
   const cumPh = PHASAGE_CA.slice(0, month + 1).reduce((s, v) => s + v, 0) / 100;
   const mon = depts.map((d) => {
     const cumPhased = d.budget * cumPh;
-    const fac = REEL_CA_FACTEUR[d.n](month);
+    const fac = caFacOf(d)(month);
     const cumReel = cumPhased * fac;
     const demPh = +(d.demarque + PHASAGE_DEM[month]).toFixed(1);
-    const demRe = +(demPh + REEL_DEM_ECART[d.n](month)).toFixed(1);
+    const demRe = +(demPh + demGapOf(d)(month)).toFixed(1);
     const tmvPh = tmvModel(d.tme, demPh);
     const tmvRe = tmvModel(d.tme, demRe);
     const devCa = Math.abs(fac - 1) * 100;
@@ -3219,7 +3225,7 @@ function FinancialMonitoring({ glob, depts }) {
   const alerts = mon.filter((x) => x.status !== "vert").map((x) => {
     const parts = [];
     if (x.devTmv > 2) parts.push(`markdown at ${fr1(x.demRe)} % in ${MOIS_LONG[month]} vs ${fr1(x.demPh)} % phased, impact ${x.tmvRe - x.tmvPh > 0 ? "+" : "−"}${fr1(Math.abs(x.tmvRe - x.tmvPh))} pt on projected TMV`);
-    if (x.devCa > 2) parts.push(`cumulative revenue at ${u(Math.round(x.cumReel))} M€ vs ${u(Math.round(x.cumPhased))} M€ phased (${x.fac > 1 ? "+" : "−"}${fr1(Math.abs(x.fac - 1) * 100)} %)`);
+    if (x.devCa > 2) parts.push(`cumulative revenue at ${fm(x.cumReel)} M€ vs ${fm(x.cumPhased)} M€ phased (${x.fac > 1 ? "+" : "−"}${fr1(Math.abs(x.fac - 1) * 100)} %)`);
     return { n: x.d.n, status: x.status, txt: parts.join(" · ") };
   });
   const projTotal = mon.reduce((s, x) => s + x.proj, 0);
@@ -3233,8 +3239,8 @@ function FinancialMonitoring({ glob, depts }) {
     let ph = 0, re = 0;
     depts.forEach((d) => {
       const dp = d.demarque + PHASAGE_DEM[m];
-      const dr = dp + REEL_DEM_ECART[d.n](m);
-      if (metric === "ca") { ph += d.budget * cp; re += d.budget * cp * REEL_CA_FACTEUR[d.n](m); }
+      const dr = dp + demGapOf(d)(m);
+      if (metric === "ca") { ph += d.budget * cp; re += d.budget * cp * caFacOf(d)(m); }
       else if (metric === "dem") { ph += (dp * d.budget) / totB; re += (dr * d.budget) / totB; }
       else { ph += (tmvModel(d.tme, dp) * d.budget) / totB; re += (tmvModel(d.tme, dr) * d.budget) / totB; }
     });
@@ -3254,11 +3260,11 @@ function FinancialMonitoring({ glob, depts }) {
   return (
     <div style={cardB}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-        <TrendingUp size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Financial monitoring — monitoring agent</span>
-        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(glob.budget)} M€ · {depts.length} departments from the Financial Framework</span>
+        <TrendingUp size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Financial monitoring — {scope ? scope.label : "monitoring agent"}</span>
+        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(glob.budget)} M€ · {depts.length} {scope ? scope.lines : "departments"} from the {scope ? scope.source : "Financial Framework"}</span>
         <ResetBtn onClick={() => setMonth(0)} />
       </div>
-      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actuals by department vs phased budget trajectory (Christmas peaks, January and July sales, back-to-school). Green ≤ 2 pts · orange 2 – 4 pts · red &gt; 4 pts.</div>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actuals by {scope ? scope.line.toLowerCase() : "department"} vs phased budget trajectory (Christmas peaks, January and July sales, back-to-school). Green ≤ 2 pts · orange 2 – 4 pts · red &gt; 4 pts.</div>
       <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <span style={{ fontSize: 11, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>Month</span>
@@ -3302,13 +3308,13 @@ function FinancialMonitoring({ glob, depts }) {
       </div>
       <div style={{ overflowX: "auto", marginBottom: 14 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead><tr>{["Department", "Status", "Cumulative revenue actual / phased", "Markdown actual / phased", "TMV actual / phased", "Max deviation"].map((c, j) => <th key={c} style={{ textAlign: j === 0 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
+          <thead><tr>{[scope ? scope.line : "Department", "Status", "Cumulative revenue actual / phased", "Markdown actual / phased", "TMV actual / phased", "Max deviation"].map((c, j) => <th key={c} style={{ textAlign: j === 0 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
           <tbody>
             {mon.map((x) => (
               <tr key={x.d.n}>
-                <td style={{ padding: "8px 8px", fontWeight: 800, color: T.ink, borderBottom: `1px solid ${T.lineSoft}` }}>{x.d.n}</td>
+                <td style={{ padding: "8px 8px", fontWeight: 800, color: T.ink, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}>{x.d.n}{x.d.collection ? <div style={{ fontSize: 10, fontWeight: 400, color: T.faint, fontFamily: MONO }}>{x.d.collection}</div> : null}</td>
                 <td style={{ textAlign: "right", borderBottom: `1px solid ${T.lineSoft}` }}><StatusChip s={x.status} /></td>
-                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{u(Math.round(x.cumReel))}</strong> / {u(Math.round(x.cumPhased))} M€</td>
+                <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{fm(x.cumReel)}</strong> / {fm(x.cumPhased)} M€</td>
                 <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: x.devTmv > 2 ? T.bad : T.ink }}>{fr1(x.demRe)} %</strong> / {fr1(x.demPh)} %</td>
                 <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{fr1(x.tmvRe)} %</strong> / {fr1(x.tmvPh)} %</td>
                 <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, fontWeight: 800, color: x.status === "vert" ? T.ok : x.status === "orange" ? T.warn : T.bad, borderBottom: `1px solid ${T.lineSoft}` }}>{fr1(x.dev)} pts</td>
@@ -3320,7 +3326,7 @@ function FinancialMonitoring({ glob, depts }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 10 }}>
         <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" }}>
           <span style={microLbl}>Monitoring agent alerts</span>
-          {alerts.length === 0 ? <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ok }}><Check size={14} /> All departments are on track.</div> : alerts.map((a) => (
+          {alerts.length === 0 ? <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ok }}><Check size={14} /> All {scope ? scope.lines : "departments"} are on track.</div> : alerts.map((a) => (
             <div key={a.n} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: T.ink, lineHeight: 1.5, marginBottom: 6 }}>
               <span style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, marginTop: 5, background: a.status === "orange" ? T.warn : T.bad }} />
               <span><strong>{a.n}</strong>: {a.txt}</span>
@@ -3337,19 +3343,19 @@ function FinancialMonitoring({ glob, depts }) {
   );
 }
 
-function CO2Monitoring({ glob, depts }) {
+function CO2Monitoring({ glob, depts, scope }) {
   const [month, setMonth] = useState(0);
   const cumPh = PHASAGE_CO2.slice(0, month + 1).reduce((s, v) => s + v, 0) / 100;
-  const cumFac = (n) => PHASAGE_CO2.slice(0, month + 1).reduce((s, v, i) => s + v * REEL_CO2_FACTEUR[n](i), 0) / (cumPh * 100);
+  const cumFac = (d) => PHASAGE_CO2.slice(0, month + 1).reduce((s, v, i) => s + v * co2FacOf(d)(i), 0) / (cumPh * 100);
   const mon = depts.map((d) => {
     const cumPhased = d.budget * cumPh;
-    const fac = cumFac(d.n);
+    const fac = cumFac(d);
     const cumReel = cumPhased * fac;
     const moisPh = (d.budget * PHASAGE_CO2[month]) / 100;
-    const moisRe = moisPh * REEL_CO2_FACTEUR[d.n](month);
+    const moisRe = moisPh * co2FacOf(d)(month);
     const dev = Math.abs(fac - 1) * 100;
     const status = dev <= 2 ? "vert" : dev <= 4 ? "orange" : "rouge";
-    return { d, cumPhased, cumReel, fac, moisPh, moisRe, dev, status, proj: d.budget * fac, cause: CO2_CAUSES[d.n] };
+    return { d, cumPhased, cumReel, fac, moisPh, moisRe, dev, status, proj: d.budget * fac, cause: causeOf(d) };
   });
   const alerts = mon.filter((x) => Math.abs(x.moisRe / x.moisPh - 1) > 0.02 || x.status !== "vert").map((x) => ({ n: x.d.n, status: x.status, txt: `${x.moisRe - x.moisPh >= 0 ? "+" : "−"}${u(Math.round(Math.abs(x.moisRe - x.moisPh)))} t CO₂e ${x.moisRe >= x.moisPh ? "above" : "below"} the trajectory in ${MOIS_LONG[month]}, ${x.cause}${x.status !== "vert" ? ` · cumulative ${x.fac > 1 ? "+" : "−"}${fr1(Math.abs(x.fac - 1) * 100)} %` : ""}` }));
   const projTotal = mon.reduce((s, x) => s + x.proj, 0);
@@ -3361,7 +3367,7 @@ function CO2Monitoring({ glob, depts }) {
   const series = MOIS.map((_, m) => {
     const cp = PHASAGE_CO2.slice(0, m + 1).reduce((s, v) => s + v, 0) / 100;
     let ph = 0, re = 0;
-    depts.forEach((d) => { ph += d.budget * cp; re += PHASAGE_CO2.slice(0, m + 1).reduce((s, v, i) => s + (d.budget * v * REEL_CO2_FACTEUR[d.n](i)) / 100, 0); });
+    depts.forEach((d) => { ph += d.budget * cp; re += PHASAGE_CO2.slice(0, m + 1).reduce((s, v, i) => s + (d.budget * v * co2FacOf(d)(i)) / 100, 0); });
     return { ph: Math.round(ph), re: Math.round(re) };
   });
   const CW = 640, CH = 200, pL = 60, pR = 14, pT = 14, pB = 26;
@@ -3373,8 +3379,8 @@ function CO2Monitoring({ glob, depts }) {
   return (
     <div style={cardG}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-        <TrendingUp size={15} color={G} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>CO₂ monitoring — monitoring agent</span>
-        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(Math.round(glob.budget))} t CO₂e · {depts.length} departments from the CO₂ Framework</span>
+        <TrendingUp size={15} color={G} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>CO₂ monitoring — {scope ? scope.label : "monitoring agent"}</span>
+        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(Math.round(glob.budget))} t CO₂e · {depts.length} {scope ? scope.lines : "departments"} from the {scope ? scope.co2Source : "CO₂ Framework"}</span>
         <ResetBtn onClick={() => setMonth(0)} />
       </div>
       <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actual emissions vs phased trajectory (production peaks before Christmas and before the sales). Green ≤ 2 % · orange 2 – 4 % · red &gt; 4 % cumulative.</div>
@@ -3406,11 +3412,11 @@ function CO2Monitoring({ glob, depts }) {
       </div>
       <div style={{ overflowX: "auto", marginBottom: 14 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead><tr>{["Department", "Status", "Cumulative actual / phased", "Month actual / phased", "Cumulative gap", "Cause"].map((c, j) => <th key={c} style={{ textAlign: j === 0 || j === 5 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
+          <thead><tr>{[scope ? scope.line : "Department", "Status", "Cumulative actual / phased", "Month actual / phased", "Cumulative gap", "Cause"].map((c, j) => <th key={c} style={{ textAlign: j === 0 || j === 5 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
           <tbody>
             {mon.map((x) => (
               <tr key={x.d.n}>
-                <td style={{ padding: "8px 8px", fontWeight: 800, color: T.ink, borderBottom: `1px solid ${T.lineSoft}` }}>{x.d.n}</td>
+                <td style={{ padding: "8px 8px", fontWeight: 800, color: T.ink, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}>{x.d.n}{x.d.collection ? <div style={{ fontSize: 10, fontWeight: 400, color: T.faint, fontFamily: MONO }}>{x.d.collection}</div> : null}</td>
                 <td style={{ textAlign: "right", borderBottom: `1px solid ${T.lineSoft}` }}><StatusChip s={x.status} /></td>
                 <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: T.ink }}>{u(Math.round(x.cumReel))}</strong> / {u(Math.round(x.cumPhased))} t</td>
                 <td style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, color: T.sub, borderBottom: `1px solid ${T.lineSoft}`, whiteSpace: "nowrap" }}><strong style={{ color: x.moisRe > x.moisPh * 1.02 ? T.bad : T.ink }}>{u(Math.round(x.moisRe))}</strong> / {u(Math.round(x.moisPh))} t</td>
@@ -3424,7 +3430,7 @@ function CO2Monitoring({ glob, depts }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 10 }}>
         <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" }}>
           <span style={microLbl}>Monitoring agent alerts</span>
-          {alerts.length === 0 ? <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ok }}><Check size={14} /> All departments are on the carbon trajectory.</div> : alerts.map((a) => (
+          {alerts.length === 0 ? <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ok }}><Check size={14} /> All {scope ? scope.lines : "departments"} are on the carbon trajectory.</div> : alerts.map((a) => (
             <div key={a.n} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: T.ink, lineHeight: 1.5, marginBottom: 6 }}>
               <span style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, marginTop: 5, background: a.status === "vert" ? T.warn : a.status === "orange" ? T.warn : T.bad }} />
               <span><strong>{a.n}</strong>: {a.txt}</span>
@@ -3751,9 +3757,11 @@ const STORE_STATUS_C = { Submitted: "#3fb27f", Partial: "#dfa93f", Missing: "#e0
 /* Pure confrontation: pushed (top-down) vs requested (bottom-up) per offer and per country */
 function computeStoreSubmissions(data, offers, countryCode = "ALL") {
   const offerOf = (id) => offers.find((o) => o.id === id) || { id, name: id, pvm: 0 };
+  const inScope = (x) => offers.some((o) => o.id === x.offerId);
   const volLabel = (pct) => (pct > STORE_TOL.volumePct ? "Over-demand" : pct < -STORE_TOL.volumePct ? "Under-demand" : "Balanced");
   const priceLabel = (pct) => (pct == null ? "No request" : pct > STORE_TOL.pricePct ? "Price above push" : pct < -STORE_TOL.pricePct ? "Price below push" : "Aligned");
-  const countries = data.countries.map((c) => {
+  const countries = data.countries.map((c0) => {
+    const c = { ...c0, offers: c0.offers.filter(inScope) };
     const answered = c.offers.filter((x) => x.requestedVolume != null);
     const pushed = c.offers.reduce((s, x) => s + x.pushedVolume, 0);
     const requested = answered.reduce((s, x) => s + x.requestedVolume, 0);
@@ -3792,10 +3800,10 @@ function computeStoreSubmissions(data, offers, countryCode = "ALL") {
   return { countries, offerRows, franceValue, intlValue, totalValue, franceShare, intlShare: 100 - franceShare, pushedFranceShare: pushedTotal ? (pushedFrance / pushedTotal) * 100 : 0, target: data.target, gapToTarget: franceShare - data.target.france, submitted: countries.filter((c) => c.status === "Submitted").length };
 }
 
-function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions by country" }) {
+function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions by country", offers = BUDGET_OFFERS, scopeLabel }) {
   const [country, setCountry] = useState("ALL");
   const data = STORE_SUBMISSIONS;
-  const r = useMemo(() => computeStoreSubmissions(data, BUDGET_OFFERS, country), [country]);
+  const r = useMemo(() => computeStoreSubmissions(data, offers, country), [country, offers]);
   const selC = country === "ALL" ? null : r.countries.find((c) => c.countryCode === country);
   const th = (align) => ({ textAlign: align, padding: "6px 6px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" });
   const td = { padding: "7px 6px", borderBottom: `1px solid ${T.lineSoft}`, fontSize: 12, whiteSpace: "nowrap" };
@@ -3808,6 +3816,7 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
     <div style={cardB}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
         <Globe2 size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{title}</span>
+        {scopeLabel && <Chip color={T.human}>{scopeLabel} · {offers.length} offers</Chip>}
         <Chip color={T.warn}>{data.source}</Chip>
         <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>last submission {data.lastSubmission} · {r.submitted} / {r.countries.length} countries submitted</span>
         <select value={country} onChange={(e) => setCountry(e.target.value)} style={{ marginLeft: "auto", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none", maxWidth: "100%" }}>
@@ -3906,22 +3915,77 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
 /* ============================================================
    Monitoring — financial, CO₂ and store submissions views; the role view can force a sub-mode
    ============================================================ */
+/* ============================================================
+   Monitoring perimeters — Group (departments), Market (every offer of the
+   Offers & Collections line) or Collection (the offers of one collection).
+   Offer lines carry their own simulated actuals; CO₂ per offer = volume ×
+   intensity, summing to the Offers & Collections CO₂ line (112 000 t).
+   ============================================================ */
+const OFFER_MONITORING = {
+  "of-baby-night": { volume: 16, intensite: 1.35, caFac: () => 1.01, demGap: () => 0.3, co2Fac: () => 0.99, cause: "recycled cotton share on target" },
+  "of-baby-under": { volume: 24, intensite: 1.3, caFac: () => 0.975, demGap: () => 1.5, co2Fac: (m) => (m >= 3 ? 1.03 : 1.0), cause: "air freight on two replenishment flows" },
+  "of-baby-licences": { volume: 9, intensite: 1.6, caFac: (m) => (m >= 4 ? 1.06 : 1.02), demGap: () => -0.5, co2Fac: (m) => (m >= 4 ? 1.05 : 1.01), cause: "licence volumes above plan" },
+  "of-girls": { volume: 15, intensite: 1.45, caFac: () => 1.0, demGap: () => 0.2, co2Fac: () => 0.98, cause: "nearshore sourcing on core lines" },
+  "of-boys": { volume: 12.5, intensite: 1.424, caFac: () => 0.96, demGap: () => 2.5, co2Fac: () => 1.0, cause: "volumes phased as planned" },
+  "of-capsules": { volume: 3.5, intensite: 1.5, caFac: (m) => (m >= 2 ? 0.93 : 1.0), demGap: () => 3, co2Fac: (m) => (m >= 2 ? 0.95 : 1.0), cause: "capsule launch delayed by one month" },
+};
+const BUDGET_COLLECTIONS = [...new Set(BUDGET_OFFERS.map((o) => o.collection))];
+const offerLines = (offers) => offers.map((o) => { const m = OFFER_MONITORING[o.id] || { volume: 1, intensite: 1.4 }; return { n: o.name, collection: o.collection, budget: o.budget, demarque: o.demarque, pvm: o.pvm, tme: o.tme, tmv: o.tmv, volume: m.volume, intensite: m.intensite, co2Budget: Math.round(m.volume * m.intensite * 1000), caFac: m.caFac, demGap: m.demGap, co2Fac: m.co2Fac, cause: m.cause }; });
+function monitoringScope(kind, collection, fw) {
+  if (kind !== "market" && kind !== "collection") return null;
+  const offers = kind === "market" ? BUDGET_OFFERS : BUDGET_OFFERS.filter((o) => o.collection === collection);
+  const lines = offerLines(offers);
+  const budget = lines.reduce((s, l) => s + l.budget, 0) || 1;
+  const w = (k) => lines.reduce((s, l) => s + l[k] * l.budget, 0) / budget;
+  const co2 = lines.reduce((s, l) => s + l.co2Budget, 0);
+  const vol = lines.reduce((s, l) => s + l.volume, 0) || 1;
+  const deptLine = fw.budgetDepts.find((d) => d.n === BUDGET_OFFERS_DEPT);
+  const co2Line = fw.co2Depts.find((d) => d.n === BUDGET_OFFERS_DEPT);
+  /* the market is steered against its Financial / CO₂ Framework line (live); a collection against the sum of its offers */
+  const finGlob = kind === "market" && deptLine ? deptLine : { budget, demarque: +w("demarque").toFixed(1), pvm: +w("pvm").toFixed(2), tme: +w("tme").toFixed(1), tmv: +w("tmv").toFixed(1) };
+  const co2Glob = kind === "market" && co2Line ? co2Line : { budget: co2, intensite: +(co2 / vol / 1000).toFixed(2), volume: vol };
+  return {
+    kind, offers, collections: [...new Set(offers.map((o) => o.collection))],
+    label: kind === "market" ? `${BUDGET_OFFERS_DEPT} market` : `${collection} collection`,
+    line: "Offer", lines: "offers",
+    source: kind === "market" ? "Financial Framework (Offers & Collections line)" : "Financial Framework (offer breakdown)",
+    co2Source: kind === "market" ? "CO₂ Framework (Offers & Collections line)" : "offer volumes × intensities",
+    fin: { glob: finGlob, depts: lines },
+    co2: { glob: co2Glob, depts: lines.map((l) => ({ n: l.n, collection: l.collection, budget: l.co2Budget, intensite: l.intensite, volume: l.volume, co2Fac: l.co2Fac, cause: l.cause })) },
+  };
+}
 const MONITORING_VIEWS = [
   { id: "financial", label: "Financial monitoring", icon: Wallet, c: T.accent },
   { id: "co2", label: "CO₂ monitoring", icon: Leaf, c: G },
   { id: "store", label: "Store submissions monitoring", icon: Globe2, c: T.human },
 ];
-function MonitoringPage({ fw, views = ["financial", "co2"], initial }) {
+function MonitoringPage({ fw, views = ["financial", "co2"], initial, scope = "group" }) {
   const allowed = MONITORING_VIEWS.filter((v) => views.includes(v.id));
   const [view, setView] = useState(initial && views.includes(initial) ? initial : allowed[0].id);
+  const [collection, setCollection] = useState(BUDGET_COLLECTIONS[0]);
   const current = allowed.some((v) => v.id === view) ? view : allowed[0].id;
+  const sc = useMemo(() => monitoringScope(scope, collection, fw), [scope, collection, fw.budgetDepts, fw.co2Depts]);
+  const HEADERS = {
+    group: { desc: "Single annual follow-up of the fiscal year: financial and CO₂ trajectories month by month, fed live by the Financial Framework and CO₂ Framework, plus the store submissions confrontation.", expert: { role: "Performance Leader", txt: "Monitors actuals against the phased frameworks, raises alerts and projects the year-end for the Group." } },
+    market: { desc: "Market follow-up of the fiscal year: revenue, markdown, TMV and CO₂ trajectories of the Offers & Collections market, offer by offer, plus the store submissions of every country.", expert: { role: "Market Manager", txt: "Steers the market's offers against the Offers & Collections line of the Financial and CO₂ Frameworks — never the Group figures." } },
+    collection: { desc: "Collection follow-up of the fiscal year: revenue, markdown, TMV and CO₂ trajectories of one collection, offer by offer, plus the store submissions received for that collection.", expert: { role: "Collection Manager", txt: "Steers a single collection against its offer breakdown from the Financial Framework and the country submissions received for its offers." } },
+  };
+  const hd = HEADERS[sc ? sc.kind : "group"];
   return (
     <div>
-      <PageHeader
-        title="Monitoring"
-        desc="Single annual follow-up of the fiscal year: financial and CO₂ trajectories month by month, fed live by the Financial Framework and CO₂ Framework, plus the store submissions confrontation."
-        expert={{ role: "Performance Leader", txt: "Monitors actuals against the phased frameworks, raises alerts and projects the year-end for the Group." }}
-      />
+      <PageHeader title={sc ? `Monitoring — ${sc.label}` : "Monitoring"} desc={hd.desc} expert={hd.expert} />
+      {sc && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: `${T.human}12`, border: `1px solid ${T.human}44`, borderRadius: 11, padding: "10px 14px", marginBottom: 16 }}>
+          <span style={{ fontSize: 11, fontFamily: MONO, color: T.faint, textTransform: "uppercase", letterSpacing: 0.5 }}>Perimeter</span>
+          {sc.kind === "collection" ? (
+            <select value={collection} onChange={(e) => setCollection(e.target.value)} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, padding: "6px 10px", color: T.ink, fontSize: 12, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none" }}>
+              {BUDGET_COLLECTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          ) : <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{sc.label}</span>}
+          <span style={{ fontSize: 11, color: T.sub, fontFamily: MONO }}>{sc.offers.length} offers · {sc.collections.length} collection{sc.collections.length > 1 ? "s" : ""} · {u(sc.fin.glob.budget)} M€ · {u(Math.round(sc.co2.glob.budget))} t CO₂e</span>
+          <span style={{ marginLeft: "auto", fontSize: 10.5, color: T.faint }}>Scoped to the {sc.kind} — Group departments are not shown here</span>
+        </div>
+      )}
       {allowed.length > 1 && (
         <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
           {allowed.map((v) => {
@@ -3934,9 +3998,9 @@ function MonitoringPage({ fw, views = ["financial", "co2"], initial }) {
           })}
         </div>
       )}
-      {current === "financial" && <FinancialMonitoring glob={fw.budgetGlob} depts={fw.budgetDepts} />}
-      {current === "co2" && <CO2Monitoring glob={fw.co2Glob} depts={fw.co2Depts} />}
-      {current === "store" && <StoreSubmissionsBlock showMonthly title="Store submissions monitoring" />}
+      {current === "financial" && <FinancialMonitoring key={sc ? sc.label : "group"} glob={sc ? sc.fin.glob : fw.budgetGlob} depts={sc ? sc.fin.depts : fw.budgetDepts} scope={sc} />}
+      {current === "co2" && <CO2Monitoring key={sc ? sc.label : "group"} glob={sc ? sc.co2.glob : fw.co2Glob} depts={sc ? sc.co2.depts : fw.co2Depts} scope={sc} />}
+      {current === "store" && <StoreSubmissionsBlock showMonthly title="Store submissions monitoring" offers={sc ? sc.offers : BUDGET_OFFERS} scopeLabel={sc ? sc.label : null} />}
     </div>
   );
 }
@@ -3947,8 +4011,8 @@ function MonitoringPage({ fw, views = ["financial", "co2"], initial }) {
 const ROLE_VIEWS = {
   "Financial Leader": { tabs: ["financial", "monitoring"], monitoring: { views: ["financial"], initial: "financial" } },
   "CSR Leader": { tabs: ["co2", "monitoring"], monitoring: { views: ["co2"], initial: "co2" } },
-  "Market Manager": { tabs: ["market", "monitoring"], monitoring: { views: ["store", "financial", "co2"], initial: "store" } },
-  "Collection Manager": { tabs: ["collection", "monitoring"], monitoring: { views: ["store", "financial", "co2"], initial: "store" } },
+  "Market Manager": { tabs: ["market", "monitoring"], monitoring: { views: ["financial", "co2", "store"], initial: "financial", scope: "market" } },
+  "Collection Manager": { tabs: ["collection", "monitoring"], monitoring: { views: ["financial", "co2", "store"], initial: "financial", scope: "collection" } },
   "Product Manager": { tabs: ["product"] },
   "IT Data": { tabs: ["ontology"] },
 };
@@ -4134,7 +4198,7 @@ export default function App() {
         {activeTab === "collection" && <CollectionFrameworkPage st={st} />}
         {activeTab === "product" && <ProductManagerPage st={st} />}
         {activeTab === "itfas" && <ProductionPage st={st} />}
-        {activeTab === "monitoring" && <MonitoringPage key={viewMode + selectedRole} fw={fw} views={roleMon ? roleMon.views : ["financial", "co2"]} initial={roleMon ? roleMon.initial : "financial"} />}
+        {activeTab === "monitoring" && <MonitoringPage key={viewMode + selectedRole} fw={fw} views={roleMon ? roleMon.views : ["financial", "co2"]} initial={roleMon ? roleMon.initial : "financial"} scope={roleMon ? roleMon.scope || "group" : "group"} />}
       </div>
     </div>
   );
