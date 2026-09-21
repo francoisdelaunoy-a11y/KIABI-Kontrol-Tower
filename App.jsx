@@ -220,7 +220,7 @@ const WhiteBadge = ({ children }) => (
   <span style={{ display: "inline-flex", alignItems: "center", background: "#ffffff", border: `1px solid ${T.line}`, borderRadius: 9, padding: "5px 10px" }}>{children}</span>
 );
 
-function PMGauge({ icon: Icon, label, used, total, unit, fmt, color }) {
+function PMGauge({ icon: Icon, label, used, total, unit, fmt, color, rule }) {
   const pct = Math.min(100, (used / total) * 100);
   const f = fmt || ((n) => u(n));
   return (
@@ -231,7 +231,30 @@ function PMGauge({ icon: Icon, label, used, total, unit, fmt, color }) {
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: 10, fontFamily: MONO, color: T.faint }}>
         <span>committed {Math.round(pct)}%</span><span>remaining {f(+(total - used).toFixed(2))} {unit}</span>
       </div>
+      {rule && <div style={{ marginTop: 8 }}>{rule}</div>}
     </div>
+  );
+}
+
+/* ============================================================
+   Group-rule compliance next to each KPI — st.breaches is the single
+   source of truth (reactive to perfRules); no standalone banner
+   ============================================================ */
+const RULE_LEVEL_C = { Compliant: "#3fb27f", Watch: "#dfa93f", Breach: "#e05a5a" };
+function ruleStatus(breaches, { area, kpi, productId } = {}) {
+  const areas = area ? (Array.isArray(area) ? area : [area]) : null;
+  const list = (breaches || []).filter((b) => (!areas || areas.includes(b.area)) && (!kpi || (b.kpis || []).includes(kpi)) && (!productId || !b.productId || b.productId === productId));
+  const level = list.some((b) => b.level !== "watch") ? "Breach" : list.length ? "Watch" : "Compliant";
+  return { level, c: RULE_LEVEL_C[level], list };
+}
+function RuleStatus({ st, area, kpi, productId, label, action = true }) {
+  const r = ruleStatus(st.breaches, { area, kpi, productId });
+  const first = r.list[0];
+  return (
+    <span title={first ? `${first.label} — arbitration: ${first.action}` : `${label || "Group rule"}: consistent with the Group rules`} style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap", maxWidth: "100%" }}>
+      <Chip color={r.c}>{label ? `${label} · ` : ""}{r.level}</Chip>
+      {action && first && <span style={{ fontSize: 10.5, color: r.c, lineHeight: 1.35 }}>{first.action}</span>}
+    </span>
   );
 }
 
@@ -325,14 +348,14 @@ function ChefPage({ st }) {
         </div>
         <span style={microLbl}>Budget status</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-          <PMGauge icon={Wallet} label="Revenue budget" used={43.8} total={st.perfRules.caEnvelope} unit="M€" fmt={(n) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} color={T.accent} />
-          <PMGauge icon={Leaf} label="CO₂ budget" used={st.collectionCO2} total={st.perfRules.carbonEnvelope} unit="t CO₂e" fmt={(n) => u(Math.round(n))} color={st.collectionCO2 > st.perfRules.carbonEnvelope ? T.bad : T.ok} />
+          <PMGauge icon={Wallet} label="Revenue budget" used={43.8} total={st.perfRules.caEnvelope} unit="M€" fmt={(n) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} color={T.accent} rule={<RuleStatus st={st} area="Offer & Collection" kpi="revenue" label="Group rule" action={false} />} />
+          <PMGauge icon={Leaf} label="CO₂ budget" used={st.collectionCO2} total={st.perfRules.carbonEnvelope} unit="t CO₂e" fmt={(n) => u(Math.round(n))} color={st.collectionCO2 > st.perfRules.carbonEnvelope ? T.bad : T.ok} rule={<RuleStatus st={st} area="Go to Market" kpi="carbon" label="Group rule" action={false} />} />
         </div>
         <span style={microLbl}>Current offer</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <PMGauge icon={TrendingUp} label="TME — entry margin rate" used={55} total={60} unit="%" fmt={(n) => n.toLocaleString("fr-FR")} color={T.human} />
-          <PMGauge icon={Tag} label="PVI — initial selling price" used={7} total={8.5} unit="€" fmt={(n) => n.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} color={T.accent} />
-          <PMGauge icon={Boxes} label="Quantities" used={8.5} total={10} unit="M" fmt={(n) => n.toLocaleString("fr-FR")} color={T.blue} />
+          <PMGauge icon={TrendingUp} label="TME — entry margin rate" used={55} total={60} unit="%" fmt={(n) => n.toLocaleString("fr-FR")} color={T.human} rule={<RuleStatus st={st} area="Supply" kpi="margin" label="Group rule" action={false} />} />
+          <PMGauge icon={Tag} label="PVI — initial selling price" used={7} total={8.5} unit="€" fmt={(n) => n.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} color={T.accent} rule={<RuleStatus st={st} area="Supply" kpi="price" label="Group rule" action={false} />} />
+          <PMGauge icon={Boxes} label="Quantities" used={8.5} total={10} unit="M" fmt={(n) => n.toLocaleString("fr-FR")} color={T.blue} rule={<RuleStatus st={st} area="Go to Market" kpi="volume" label="Group rule" action={false} />} />
           <PMGauge icon={Layers} label="Number of colourway references" used={500} total={600} unit="colourway refs" fmt={(n) => u(n)} color={T.human} />
           <PMGauge icon={GitBranch} label="Quantities per colourway reference" used={20000} total={24000} unit="p" fmt={(n) => u(n)} color={T.silver} />
         </div>
@@ -502,16 +525,17 @@ function ChefPage({ st }) {
         <span style={microLbl}>Collection structure indicators</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {[
-            { label: "PVI", val: eur(locked ? snap.pvi : st.pvcOf(sel)), icon: Tag, color: T.accent },
-            { label: "Cost price", val: eur(locked ? snap.revient : st.revOf(sel)), icon: Wallet, color: T.blue },
-            { label: "Margin", val: (locked ? snap.marge : marge) + " %", icon: TrendingUp, color: T.human },
-            { label: "CO₂ weight / piece", val: (locked ? snap.co2 : st.co2Of(sel)) + " kg", icon: Leaf, color: T.ok },
-            { label: "Supply lead time", val: (locked ? snap.lead : st.leadOf(reco)) + " d", icon: Truck, color: T.silver },
-            { label: "Volume", val: u(locked ? snap.volume : st.volOf(sel)) + " units", icon: Boxes, color: T.silver },
+            { label: "PVI", val: eur(locked ? snap.pvi : st.pvcOf(sel)), icon: Tag, color: T.accent, rule: <RuleStatus st={st} area="Supply" kpi="price" /> },
+            { label: "Cost price", val: eur(locked ? snap.revient : st.revOf(sel)), icon: Wallet, color: T.blue, rule: <RuleStatus st={st} area="Supply" kpi="margin" /> },
+            { label: "Margin", val: (locked ? snap.marge : marge) + " %", icon: TrendingUp, color: T.human, rule: <RuleStatus st={st} area="Supply" kpi="margin" /> },
+            { label: "CO₂ weight / piece", val: (locked ? snap.co2 : st.co2Of(sel)) + " kg", icon: Leaf, color: T.ok, rule: <RuleStatus st={st} area="Offer & Collection" kpi="footprint" productId={sel.id} /> },
+            { label: "Supply lead time", val: (locked ? snap.lead : st.leadOf(reco)) + " d", icon: Truck, color: T.silver, rule: <RuleStatus st={st} area="Supply" kpi="sourcing" action={false} /> },
+            { label: "Volume", val: u(locked ? snap.volume : st.volOf(sel)) + " units", icon: Boxes, color: T.silver, rule: <RuleStatus st={st} area="Go to Market" kpi="volume" /> },
           ].map((s) => (
             <div key={s.label} style={{ flex: "1 1 130px", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 13px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, color: T.sub, fontSize: 11, fontWeight: 600 }}><s.icon size={13} color={s.color} />{s.label}</div>
               <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 600, color: T.ink, marginTop: 5 }}>{s.val}</div>
+              {s.rule && <div style={{ marginTop: 6 }}>{s.rule}</div>}
             </div>
           ))}
         </div>
@@ -798,15 +822,19 @@ function DirectricePage({ st }) {
         </div>
         <span style={microLbl}>Collection budget status</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-          <PMGauge icon={Wallet} label="Collection revenue budget" used={131.4} total={st.perfRules.caEnvelope * 3} unit="M€" fmt={(n) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} color={T.accent} />
-          <PMGauge icon={Leaf} label="Collection CO₂ budget" used={+(st.collectionCO2 * 3).toFixed(1)} total={st.perfRules.carbonEnvelope * 3} unit="t CO₂e" fmt={(n) => u(Math.round(n))} color={st.collectionCO2 > st.perfRules.carbonEnvelope ? T.bad : T.ok} />
+          <PMGauge icon={Wallet} label="Collection revenue budget" used={131.4} total={st.perfRules.caEnvelope * 3} unit="M€" fmt={(n) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} color={T.accent} rule={<RuleStatus st={st} area="Offer & Collection" kpi="revenue" label="Group rule" action={false} />} />
+          <PMGauge icon={Leaf} label="Collection CO₂ budget" used={+(st.collectionCO2 * 3).toFixed(1)} total={st.perfRules.carbonEnvelope * 3} unit="t CO₂e" fmt={(n) => u(Math.round(n))} color={st.collectionCO2 > st.perfRules.carbonEnvelope ? T.bad : T.ok} rule={<RuleStatus st={st} area="Go to Market" kpi="carbon" label="Group rule" action={false} />} />
         </div>
         <span style={microLbl}>Collection objectives (consolidated from the product managers)</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-          <PMGauge icon={TrendingUp} label="Collection TME" used={54} total={58} unit="%" fmt={(n) => n.toLocaleString("fr-FR")} color={T.human} />
-          <PMGauge icon={Tag} label="Collection average PVI" used={8.2} total={9} unit="€" fmt={(n) => n.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} color={T.accent} />
-          <PMGauge icon={Boxes} label="Collection quantities" used={21} total={25.5} unit="M" fmt={(n) => n.toLocaleString("fr-FR")} color={T.blue} />
+          <PMGauge icon={TrendingUp} label="Collection TME" used={54} total={58} unit="%" fmt={(n) => n.toLocaleString("fr-FR")} color={T.human} rule={<RuleStatus st={st} area="Supply" kpi="margin" label="Group rule" action={false} />} />
+          <PMGauge icon={Tag} label="Collection average PVI" used={8.2} total={9} unit="€" fmt={(n) => n.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} color={T.accent} rule={<RuleStatus st={st} area="Supply" kpi="price" label="Group rule" action={false} />} />
+          <PMGauge icon={Boxes} label="Collection quantities" used={21} total={25.5} unit="M" fmt={(n) => n.toLocaleString("fr-FR")} color={T.blue} rule={<RuleStatus st={st} area="Go to Market" kpi="volume" label="Group rule" action={false} />} />
           <PMGauge icon={Layers} label="Collection colourway references" used={1260} total={1500} unit="col. refs" fmt={(n) => u(n)} color={T.human} />
+        </div>
+        <span style={microLbl}>Group rules — computed on the indicators above (single source: the Group-rule breach engine)</span>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          <RuleStatus st={st} area="Supply" kpi="price" label="Price" /><RuleStatus st={st} area="Supply" kpi="margin" label="Margin" /><RuleStatus st={st} area="Go to Market" kpi="volume" label="Volume" /><RuleStatus st={st} area="Offer & Collection" kpi="footprint" label="Product footprint" />
         </div>
         <span style={microLbl}>Product manager contributions</span>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1099,8 +1127,8 @@ function MarketFrameworkPage({ st }) {
   return (
     <div>
       <PageHeader title="Market Framework" desc="The Market Manager writes the market brief, then checks the overall balance of the collection built by the product managers." expert={EXPERTS.directrice} />
-      <CascadeBanner st={st} area="Offer & Collection" />
       <DirectricePage st={st} />
+      <StoreSubmissionsBlock />
     </div>
   );
 }
@@ -1108,11 +1136,14 @@ function MarketFrameworkPage({ st }) {
 function CollectionFrameworkPage({ st }) {
   return (
     <div>
-      <PageHeader title="Collection Framework" desc="Collection-level framing, built from the market brief before the product managers structure their offers." expert={{ role: "Business decision-maker", txt: "The collection framework will translate the market brief into guidelines for each collection structure. It is not built yet." }} />
+      <PageHeader title="Collection Framework" desc="Collection-level framing built from the market brief, confronted with the needs submitted by each country's stores." expert={{ role: "Business decision-maker", txt: "The collection framework translates the market brief into guidelines per collection structure and checks them against the store submissions." }} />
+      <span style={microLbl}>Market brief received from Market Framework</span>
+      <MarketBriefCard st={st} />
+      <StoreSubmissionsBlock />
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 22, marginBottom: 18, textAlign: "center" }}>
         <span style={{ width: 44, height: 44, borderRadius: 12, display: "inline-grid", placeItems: "center", background: `${T.accent}12`, border: `1px solid ${T.accent}44`, marginBottom: 10 }}><LayoutGrid size={20} color={T.accent} /></span>
-        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Collection framework not built yet</div>
-        <div style={{ fontSize: 12, color: T.sub, marginTop: 4, lineHeight: 1.5 }}>The collection framing will be derived from the market brief once the Market Manager has synthesized it.</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Collection guidelines not built yet</div>
+        <div style={{ fontSize: 12, color: T.sub, marginTop: 4, lineHeight: 1.5 }}>The guidelines per collection structure will be derived from the market brief and the store submissions above.</div>
         <div style={{ display: "inline-block", textAlign: "left", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", marginTop: 14 }}>
           <span style={microLbl}>Coming next</span>
           {["Collection guidelines derived from the market brief", "Framing per collection structure, shared with the product managers", "Hand-off to the Product Manager offer structuring"].map((t) => (
@@ -1120,8 +1151,6 @@ function CollectionFrameworkPage({ st }) {
           ))}
         </div>
       </div>
-      <span style={microLbl}>Market brief received from Market Framework</span>
-      <MarketBriefCard st={st} />
     </div>
   );
 }
@@ -1130,7 +1159,6 @@ function ProductManagerPage({ st }) {
   return (
     <div>
       <PageHeader title="Product Manager" desc="From the market brief to the product sheet: structure the Baby offer, break it down into products, generate the product sheet from a voice note and validate development." expert={EXPERTS.design} />
-      <CascadeBanner st={st} area="Offer & Collection" />
       <MarketBriefCard st={st} />
       <ChefPage st={st} />
     </div>
@@ -1320,7 +1348,6 @@ function GTMPage({ st }) {
   return (
     <div>
       <PageHeader title="Go to market" desc="Store launch brief, volume and selling price, then discussion with the supply agent." expert={EXPERTS.supply} />
-      <CascadeBanner st={st} area="Go to Market" />
       <LowCarbonBanner st={st} context="gtm" prod={sel} />
 
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
@@ -1367,6 +1394,10 @@ function GTMPage({ st }) {
           <div style={{ fontSize: 12, color: T.sub, marginBottom: 12 }}>
             Collection structure: <strong style={{ color: T.ink }}>{sel.name}</strong> · volume <span style={{ fontFamily: MONO }}>{u(st.volOf(sel))} units</span> · PVI <span style={{ fontFamily: MONO }}>{eur(st.pvcOf(sel))}</span>
           </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            <RuleStatus st={st} area="Supply" kpi="price" label="Price" action={false} /><RuleStatus st={st} area="Go to Market" kpi="volume" label="Volume" action={false} /><RuleStatus st={st} area="Supply" kpi="sourcing" label="Sourcing" action={false} /><RuleStatus st={st} area="Offer & Collection" kpi="footprint" productId={sel.id} label="Footprint" action={false} />
+          </div>
+          {ruleStatus(st.breaches, { area: ["Supply", "Go to Market", "Offer & Collection"], productId: sel.id }).list.slice(0, 2).map((b) => <div key={b.label} style={{ fontSize: 10.5, color: b.level === "watch" ? T.warn : T.bad, marginBottom: 6, lineHeight: 1.4 }}>{b.label} → {b.action}</div>)}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
             <label style={{ flex: "1 1 140px", fontSize: 10.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>Volume (units)
               <input type="number" value={st.volOf(sel)} onChange={(e) => st.setVol(sel.id, +e.target.value || 0)} style={{ display: "block", width: "100%", marginTop: 5, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 10px", fontFamily: MONO, fontSize: 13, color: T.ink, outline: "none", boxSizing: "border-box" }} />
@@ -1433,7 +1464,6 @@ function ItfasPage({ st, embedded }) {
   return (
     <div>
       <PageHeader title="Supply" desc="Price validations transferred by Go to market — to be carried out by KFI." expert={EXPERTS.supply} />
-      <CascadeBanner st={st} area="Supply" />
       <LowCarbonBanner st={st} context="supply" prod={sel || PRODUITS[0]} />
 
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
@@ -1480,11 +1510,13 @@ function ItfasPage({ st, embedded }) {
               <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{scen.name}</div>
               <div style={{ fontSize: 11, color: T.sub, fontFamily: MONO, marginTop: 5 }}>{eur(scen.cost)}/pc · {st.leadOf(scen)} d · stock-out {st.rupOf(scen)} % · {scen.splitProche}% nearshore</div>
               <div style={{ fontSize: 10.5, color: T.faint, marginTop: 5 }}>{scen.usine} · focus: {scen.maitrise}</div>
+              <div style={{ marginTop: 8 }}><RuleStatus st={st} area="Supply" kpi="margin" label="Landed cost" /></div>
             </div>
             <div style={{ background: T.panel2, border: `1px solid ${cap.c}55`, borderRadius: 11, padding: "12px 14px" }}>
               <div style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, textTransform: "uppercase", marginBottom: 6 }}>Capacity verdict</div>
               <div style={{ fontSize: 13, fontWeight: 800, color: cap.c }}>{cap.v}</div>
               <div style={{ fontSize: 11, color: T.sub, marginTop: 5, lineHeight: 1.5 }}>{cap.t}</div>
+              <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}><Chip color={cap.c}>Capacity · {cap.c === T.ok ? "Compliant" : cap.c === T.warn ? "Watch" : "Breach"}</Chip><RuleStatus st={st} area="KFI" kpi="supplier" label="Supplier risk" /></div>
             </div>
           </div>
           {!st.validated.has(sel.id) ? (
@@ -1513,6 +1545,8 @@ function Spark({ pts, color }) {
   const xy = pts.map((v, i) => `${(i / (pts.length - 1)) * w},${h - ((v - mn) / (mx - mn || 1)) * (h - 8) - 4}`).join(" ");
   return <svg width={w} height={h} style={{ display: "block" }}><polyline points={xy} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" /></svg>;
 }
+/* Which Group rule (perfRules breach) each trajectory axis must stay consistent with */
+const KFI_RULE_MAP = { Quality: { area: "KFI", kpi: "supplier" }, Cost: { area: "Supply", kpi: "margin" }, "Lead time": { area: "Supply", kpi: "sourcing" }, "Env. compliance": { area: ["KFI", "Go to Market"], kpi: "carbon" } };
 const KPI_TRAJ = [
   { t: "Quality", val: "86%", sub: "above C", c: "#3fb27f", note: "14% of the panel below the threshold — 3 suppliers carrying 12% of the volume", tl: [["6m", "89%"], ["18m", "93%"], ["36m", "95%"]], spark: [3, 4, 5, 6, 8, 10] },
   { t: "Cost", val: "−1.5", sub: "pts vs context", c: "#3fb27f", note: "clear outperformance — context at +5.5%, actual prices at +4%", tl: [["6m", "−1.2"], ["18m", "−0.8"], ["36m", "−1.5"]], spark: [7, 4, 7, 3, 6, 4] },
@@ -1779,7 +1813,7 @@ const KFI_ARBITRATIONS = [
     actions: () => ["Reserve additional capacity at Taipei Knitworks", "Rephase 70 kpcs of Mass-market capsule", "Formalise a contractual catch-up plan with Shenzhen Garments", "Maintain Colombo Apparel's environmental milestone", "Forbid any allocation to emergency sourcing until compliance and traceability are validated"] },
 ];
 
-function KfiReconciliation() {
+function KfiReconciliation({ st }) {
   const [kfiStep, setKfiStep] = useState(1);
   const [plans, setPlans] = useState(() => kfiClone(KFI_PARTNER_PLANS));
   const [targets, setTargets] = useState({ quality: KFI_TARGETS.quality, traceability: KFI_TARGETS.traceability });
@@ -1871,6 +1905,7 @@ function KfiReconciliation() {
           <ShieldCheck size={14} color={chainC} />
           <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>Chain control</span>
           <span style={{ fontSize: 11.5, color: T.sub }}>{r.checks.filter((c) => c.ok).length} / {r.checks.length} rules respected · global verdict = worst verdict across capacity, compliance, CSR, quality and traceability</span>
+          {st && <RuleStatus st={st} area={["KFI", "Go to Market"]} label="Group rules" />}
           <span style={{ marginLeft: "auto" }}><Chip color={chainC}>{r.chainOk ? "Allocation reconciled" : "Inconsistent chain"}</Chip></span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}>
@@ -2165,6 +2200,7 @@ function KfiReconciliation() {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
             <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, letterSpacing: 0.6, textTransform: "uppercase" }}>Global verdict</span>
             {r.dims.map((d) => <span key={d.k} title={d.why} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: T.sub }}>{d.label} <KfiVerdict v={d.verdict} /></span>)}
+            {st && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: T.sub }}>Group rules <RuleStatus st={st} area={["KFI", "Go to Market"]} action={false} /></span>}
             <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 800, color: gc }}>= <KfiVerdict v={r.globalVerdict} /></span>
           </div>
           <div style={{ marginTop: 12 }}><button onClick={() => setKfiStep(4)} style={nextBtn}>Go to the KFI arbitration <ArrowRight size={14} /></button></div>
@@ -2242,7 +2278,6 @@ function ProductionPage({ st }) {
         <Sparkles size={15} color={T.human} style={{ flexShrink: 0, marginTop: 1 }} />
         <span style={{ fontSize: 12, color: T.ink, lineHeight: 1.5 }}><strong>{EXPERTS.supply.role} —</strong> {EXPERTS.supply.txt}</span>
       </div>
-      <CascadeBanner st={st} area="KFI" />
 
       {/* ---- Panel performance — trajectory ---- */}
       <div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, marginBottom: 10 }}>Panel performance — trajectory</div>
@@ -2258,6 +2293,7 @@ function ProductionPage({ st }) {
               <span style={{ fontSize: 11.5, color: T.sub, marginLeft: 6 }}>{k.sub}</span>
             </div>
             <div style={{ margin: "8px 0" }}><Spark pts={k.spark} color={k.c} /></div>
+            <div style={{ marginBottom: 8 }}><RuleStatus st={st} area={KFI_RULE_MAP[k.t].area} kpi={KFI_RULE_MAP[k.t].kpi} label="Group rule" /></div>
             <div style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, lineHeight: 1.5, borderTop: `1px solid ${T.lineSoft}`, paddingTop: 8 }}>{k.note}</div>
             <div style={{ display: "flex", marginTop: 8 }}>
               {k.tl.map(([m, v]) => (
@@ -2272,7 +2308,7 @@ function ProductionPage({ st }) {
       </div>
 
       {/* ---- Partner business plans × in-season forecasts (RELEX) ---- */}
-      <KfiReconciliation />
+      <KfiReconciliation st={st} />
 
       {/* ---- Supplier panel, followed by "Act now" and "Decisions to make" ---- */}
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, boxShadow: "0 1px 4px rgba(0,83,160,.06)" }}>
@@ -2366,26 +2402,6 @@ const SIM_SCEN = [
   { id: "volumes", name: "Volume reduction", ca: 41.7, co2: 4784, marge: 55.8, note: "−11 % CO₂ · reduced markdown" },
   { id: "mix", name: "Agent-recommended mix", ca: 43.2, co2: 4398, marge: 54.1, note: "Nearshore on 4 at-risk references" },
 ];
-function CascadeBanner({ st, area }) {
-  const list = st.breaches.filter((b) => b.area === area);
-  const ok = list.length === 0;
-  const c = ok ? T.ok : T.bad;
-  return (
-    <div style={{ background: `${c}10`, border: `1px solid ${c}66`, borderRadius: 12, padding: "11px 14px", marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-        <ShieldCheck size={15} color={c} style={{ flexShrink: 0 }} />
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>Group rules applied</span>
-        <span style={{ fontSize: 11.5, color: T.sub }}>{CASCADE_SCOPE[area]}</span>
-        <span style={{ marginLeft: "auto" }}><Chip color={c}>{ok ? "Compliant" : `${list.length} breach${list.length > 1 ? "es" : ""}`}</Chip></span>
-      </div>
-      {!ok && (
-        <div style={{ fontSize: 11.5, color: T.sub, marginTop: 6, lineHeight: 1.5 }}>
-          <strong style={{ color: c }}>{list[0].label}</strong> · Arbitration: {list[0].action}
-        </div>
-      )}
-    </div>
-  );
-}
 function PerformancePage({ st }) {
   const { perfRules: r, setPerfRules, collectionCO2, breaches } = st;
   const [scen, setScen] = useState("mix");
@@ -2600,12 +2616,153 @@ const analyseCopie = (c, obj) => {
   return { verdict, txt, ecart, ecartPct, tmvExp, tmeExp, dTmv, chaineOk };
 };
 
+/* ============================================================
+   Financial Framework — offers under the "Offers & Collections" department.
+   Same offer ids are referenced by STORE_SUBMISSIONS (one offer referential).
+   ============================================================ */
+const BUDGET_OFFERS_DEPT = "Offers & Collections";
+const BUDGET_OFFERS = [
+  { id: "of-baby-night", name: "Baby nightwear", collection: "Baby S1 2027", budget: 210, demarque: 26, pvm: 11.5, tme: 58, tmv: 51.8 },
+  { id: "of-baby-under", name: "Baby underwear & bodysuits", collection: "Baby S1 2027", budget: 260, demarque: 24, pvm: 9.4, tme: 59, tmv: 53.0 },
+  { id: "of-baby-licences", name: "Baby licences", collection: "Baby S1 2027", budget: 120, demarque: 31, pvm: 12.2, tme: 56, tmv: 48.6 },
+  { id: "of-girls", name: "Girls 2-14 core", collection: "Kids S1 2027", budget: 230, demarque: 28, pvm: 14.1, tme: 58, tmv: 51.4 },
+  { id: "of-boys", name: "Boys 2-14 core", collection: "Kids S1 2027", budget: 180, demarque: 29, pvm: 13.6, tme: 57, tmv: 50.2 },
+  { id: "of-capsules", name: "Kids capsules & collabs", collection: "Kids S1 2027", budget: 50, demarque: 33, pvm: 15.8, tme: 55, tmv: 49.5 },
+];
+const OFFER_TOL = { budgetPct: 1, ratePts: 1.5, pvmEur: 0.5 };
+/* Pure aggregation of the offers against their department line and the global budget */
+function computeOfferBreakdown(offers, dept, glob) {
+  const total = offers.reduce((s, o) => s + o.budget, 0);
+  const w = (k) => (total ? offers.reduce((s, o) => s + o.budget * o[k], 0) / total : 0);
+  const weighted = { demarque: w("demarque"), pvm: w("pvm"), tme: w("tme"), tmv: w("tmv") };
+  const rows = offers.map((o) => {
+    const tmvExp = tmvModel(o.tme, o.demarque);
+    const dTmv = +(o.tmv - tmvExp).toFixed(1);
+    return { ...o, shareDept: dept.budget ? (o.budget / dept.budget) * 100 : 0, shareGlobal: glob.budget ? (o.budget / glob.budget) * 100 : 0, tmvExp, dTmv, chainOk: Math.abs(dTmv) <= 1.5 };
+  });
+  const budgetGap = total - dept.budget;
+  const budgetGapPct = dept.budget ? (budgetGap / dept.budget) * 100 : 0;
+  const budgetOk = Math.abs(budgetGapPct) <= OFFER_TOL.budgetPct;
+  const checks = [
+    { k: "demarque", label: "Markdown", offers: weighted.demarque, dept: dept.demarque, diff: weighted.demarque - dept.demarque, tol: OFFER_TOL.ratePts, fmt: (v) => `${fr1(v)} %`, unit: "pts" },
+    { k: "pvm", label: "Average selling price", offers: weighted.pvm, dept: dept.pvm, diff: weighted.pvm - dept.pvm, tol: OFFER_TOL.pvmEur, fmt: (v) => `${fr2(v)} €`, unit: "€" },
+    { k: "tme", label: "TME", offers: weighted.tme, dept: dept.tme, diff: weighted.tme - dept.tme, tol: OFFER_TOL.ratePts, fmt: (v) => `${fr1(v)} %`, unit: "pts" },
+    { k: "tmv", label: "TMV", offers: weighted.tmv, dept: dept.tmv, diff: weighted.tmv - dept.tmv, tol: OFFER_TOL.ratePts, fmt: (v) => `${fr1(v)} %`, unit: "pts" },
+  ].map((c) => ({ ...c, ok: Math.abs(c.diff) <= c.tol }));
+  return { total, weighted, rows, budgetGap, budgetGapPct, budgetOk, checks, chainBad: rows.filter((r) => !r.chainOk).length, allOk: budgetOk && checks.every((c) => c.ok) && rows.every((r) => r.chainOk) };
+}
+
+function OfferBreakdown({ glob, dept, validated, validatedAt }) {
+  const [offerId, setOfferId] = useState(BUDGET_OFFERS[0].id);
+  const bd = useMemo(() => computeOfferBreakdown(BUDGET_OFFERS, dept, glob), [dept, glob]);
+  const th = (j, n) => ({ textAlign: j === 0 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" });
+  const td = { padding: "7px 8px", borderBottom: `1px solid ${T.lineSoft}`, fontSize: 12, whiteSpace: "nowrap" };
+  const num = { ...td, textAlign: "right", fontFamily: MONO, color: T.sub };
+  const box = { background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" };
+  return (
+    <div style={{ marginTop: 16, borderTop: `1px solid ${T.lineSoft}`, paddingTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+        <ShoppingBag size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{BUDGET_OFFERS_DEPT} — offer breakdown</span>
+        {validated ? <Chip color={T.ok}>Global budget validated · {validatedAt}</Chip> : <Chip color={T.warn}>Validation required</Chip>}
+        <span style={{ marginLeft: "auto", fontSize: 10.5, color: T.faint, fontFamily: MONO }}>{BUDGET_OFFERS.length} offers · tolerance {OFFER_TOL.budgetPct} % budget · {fr1(OFFER_TOL.ratePts)} pts rates · {fr2(OFFER_TOL.pvmEur)} € price</span>
+      </div>
+      {!validated ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: T.panel2, border: `1px dashed ${T.line}`, borderRadius: 11, padding: "14px 16px" }}>
+          <Scale size={16} color={T.faint} />
+          <div style={{ fontSize: 12, color: T.sub, lineHeight: 1.5 }}><strong style={{ color: T.ink }}>Validate the global budget before breaking it down into offers</strong> — offer figures are not shown as official until the global budget snapshot is validated in step 1.</div>
+        </div>
+      ) : (() => {
+        const o = bd.rows.find((x) => x.id === offerId) || bd.rows[0];
+        const contrib = [
+          { label: "Budget", val: `${u(o.budget)} M€`, ref: `${u(dept.budget)} M€ department · ${u(glob.budget)} M€ global`, txt: `${fr1(o.shareDept)} % of ${dept.n} · ${fr1(o.shareGlobal)} % of the global budget` },
+          { label: "Markdown", val: `${fr1(o.demarque)} %`, ref: `${fr1(dept.demarque)} % department`, txt: `weight ${fr1(o.shareDept)} % → ${fr1((o.demarque * o.shareDept) / 100)} pts of the ${fr1(bd.weighted.demarque)} % weighted markdown` },
+          { label: "Average selling price", val: `${fr2(o.pvm)} €`, ref: `${fr2(dept.pvm)} € department`, txt: `weight ${fr1(o.shareDept)} % → ${fr2((o.pvm * o.shareDept) / 100)} € of the ${fr2(bd.weighted.pvm)} € weighted average price` },
+          { label: "TME", val: `${fr1(o.tme)} %`, ref: `${fr1(dept.tme)} % department`, txt: `weight ${fr1(o.shareDept)} % → ${fr1((o.tme * o.shareDept) / 100)} pts of the ${fr1(bd.weighted.tme)} % weighted TME` },
+          { label: "TMV", val: `${fr1(o.tmv)} %`, ref: `${fr1(dept.tmv)} % department · expected ${fr1(o.tmvExp)} % from TME and markdown`, txt: `weight ${fr1(o.shareDept)} % → ${fr1((o.tmv * o.shareDept) / 100)} pts of the ${fr1(bd.weighted.tmv)} % weighted TMV` },
+        ];
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+              <span style={{ fontSize: 11.5, color: T.sub }}>Offer</span>
+              <select value={o.id} onChange={(e) => setOfferId(e.target.value)} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none", maxWidth: "100%" }}>
+                {BUDGET_OFFERS.map((x) => <option key={x.id} value={x.id}>{x.name} — {x.collection}</option>)}
+              </select>
+              <Chip color={o.chainOk ? T.ok : T.bad}>{o.chainOk ? "Margin chain consistent" : `Margin chain inconsistency ${o.dTmv > 0 ? "+" : ""}${fr1(o.dTmv)} pts`}</Chip>
+              <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>{o.collection} · id {o.id}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10, marginBottom: 14 }}>
+              {contrib.map((c) => (
+                <div key={c.label} style={box}>
+                  <div style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, textTransform: "uppercase" }}>{c.label}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: T.ink, marginTop: 4 }}>{c.val}</div>
+                  <div style={{ fontSize: 10.5, color: T.faint, marginTop: 3 }}>reference: {c.ref}</div>
+                  <div style={{ fontSize: 11, color: T.sub, marginTop: 5, lineHeight: 1.45 }}>contribution: {c.txt}</div>
+                </div>
+              ))}
+            </div>
+            <span style={microLbl}>All offers — budget shares and margin chain</span>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>{["Offer", "Budget", `% of ${dept.n}`, "% of global", "Markdown", "Avg. price", "TME", "TMV", "Chain"].map((h, j) => <th key={h} style={th(j)}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {bd.rows.map((r) => (
+                    <tr key={r.id} onClick={() => setOfferId(r.id)} style={{ cursor: "pointer", background: r.id === o.id ? `${T.accent}10` : "transparent" }}>
+                      <td style={td}><div style={{ fontWeight: 800, color: T.ink }}>{r.name}</div><div style={{ fontSize: 10.5, color: T.faint }}>{r.collection}</div></td>
+                      <td style={{ ...num, fontWeight: 800, color: T.ink }}>{u(r.budget)} M€</td>
+                      <td style={num}>{fr1(r.shareDept)} %</td>
+                      <td style={num}>{fr1(r.shareGlobal)} %</td>
+                      <td style={num}>{fr1(r.demarque)} %</td>
+                      <td style={num}>{fr2(r.pvm)} €</td>
+                      <td style={num}>{fr1(r.tme)} %</td>
+                      <td style={num}>{fr1(r.tmv)} %</td>
+                      <td style={{ ...td, textAlign: "right" }}><Chip color={r.chainOk ? T.ok : T.bad}>{r.chainOk ? "Consistent" : `${r.dTmv > 0 ? "+" : ""}${fr1(r.dTmv)} pts off`}</Chip></td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: T.panel2 }}>
+                    <td style={{ ...td, fontWeight: 800, color: T.ink }}>Offers total vs {dept.n}</td>
+                    <td style={{ ...num, fontWeight: 800, color: bd.budgetOk ? T.ok : T.bad }}>{u(bd.total)} / {u(dept.budget)} M€</td>
+                    <td style={num}>{fr1(bd.rows.reduce((s, r) => s + r.shareDept, 0))} %</td>
+                    <td style={num}>{fr1(bd.rows.reduce((s, r) => s + r.shareGlobal, 0))} %</td>
+                    <td style={{ ...num, color: bd.checks[0].ok ? T.ok : T.bad }}>{fr1(bd.weighted.demarque)} %</td>
+                    <td style={{ ...num, color: bd.checks[1].ok ? T.ok : T.bad }}>{fr2(bd.weighted.pvm)} €</td>
+                    <td style={{ ...num, color: bd.checks[2].ok ? T.ok : T.bad }}>{fr1(bd.weighted.tme)} %</td>
+                    <td style={{ ...num, color: bd.checks[3].ok ? T.ok : T.bad }}>{fr1(bd.weighted.tmv)} %</td>
+                    <td style={{ ...td, textAlign: "right" }}><Chip color={bd.chainBad ? T.bad : T.ok}>{bd.chainBad ? `${bd.chainBad} to fix` : "All consistent"}</Chip></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: 12, background: `${bd.allOk ? T.ok : T.warn}10`, border: `1px solid ${bd.allOk ? T.ok : T.warn}66`, borderRadius: 10, padding: "9px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <Sparkles size={14} color={T.human} />
+                <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>Reconciliation with the {dept.n} line</span>
+                <span style={{ marginLeft: "auto" }}><Chip color={bd.allOk ? T.ok : T.warn}>{bd.allOk ? "Offers reconciled" : "Gaps to arbitrate"}</Chip></span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6, fontSize: 11.5, color: T.sub, lineHeight: 1.45 }}>
+                <span style={{ display: "flex", gap: 7, alignItems: "flex-start" }}>{bd.budgetOk ? <Check size={13} color={T.ok} style={{ flexShrink: 0, marginTop: 2 }} /> : <X size={13} color={T.bad} style={{ flexShrink: 0, marginTop: 2 }} />}<span>Budget: offers {u(bd.total)} M€ vs department {u(dept.budget)} M€ ({bd.budgetGap > 0 ? "+" : ""}{u(bd.budgetGap)} M€, {bd.budgetGapPct > 0 ? "+" : ""}{fr1(bd.budgetGapPct)} %, tolerance {OFFER_TOL.budgetPct} %)</span></span>
+                {bd.checks.map((c) => (
+                  <span key={c.k} style={{ display: "flex", gap: 7, alignItems: "flex-start" }}>{c.ok ? <Check size={13} color={T.ok} style={{ flexShrink: 0, marginTop: 2 }} /> : <X size={13} color={T.bad} style={{ flexShrink: 0, marginTop: 2 }} />}<span>{c.label}: offers weighted {c.fmt(c.offers)} vs department {c.fmt(c.dept)} ({c.diff > 0 ? "+" : ""}{c.unit === "€" ? fr2(c.diff) : fr1(c.diff)} {c.unit}, tolerance {c.unit === "€" ? fr2(c.tol) : fr1(c.tol)} {c.unit})</span></span>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 function BudgetModule({ fw }) {
   const [step, setStep] = useState(1);
   const { budgetGlob: glob, setBudgetGlob: setGlob, budgetDepts: depts, setBudgetDepts: setDepts } = fw; /* shared with Monitoring */
   const [sentAt, setSentAt] = useState(null);
   const [mailOpen, setMailOpen] = useState(null);
   const [received, setReceived] = useState(false);
+  /* Explicit validation of the global budget: snapshot taken when moving to the breakdown; any later change invalidates it */
+  const [globValidation, setGlobValidation] = useState(null);
+  const globValid = !!globValidation && IND.every((i) => globValidation.snap[i.k] === glob[i.k]);
+  const validatedAt = globValidation ? globValidation.at : "";
+  const validateGlobal = () => { setGlobValidation({ at: new Date().toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }), snap: { ...glob } }); setStep(2); };
 
   const setG = (k, v) => setGlob((g) => ({ ...g, [k]: v }));
   const setD = (i, k, v) => setDepts((ds) => ds.map((d, j) => (j === i ? { ...d, [k]: v } : d)));
@@ -2643,6 +2800,7 @@ function BudgetModule({ fw }) {
         <div style={cardB}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
             <Wallet size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Kiabi global budget — fiscal year Sept. 2026 → Aug. 2027</span>
+            {globValidation && <Chip color={globValid ? T.ok : T.warn}>{globValid ? `Global budget validated · ${validatedAt}` : "Changed since validation — validate again"}</Chip>}
             <ResetBtn onClick={() => setGlob({ ...BUDGET_GLOBAL })} />
           </div>
           <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Indicators set by the Group before breakdown. All values are editable.</div>
@@ -2662,7 +2820,7 @@ function BudgetModule({ fw }) {
             <span style={{ fontSize: 11.5, color: T.ink }}>Chain check: at a TME of {fr1(glob.tme)} % and {fr1(glob.demarque)} % markdown, the expected TMV is <strong>{fr1(tmvModel(glob.tme, glob.demarque))} %</strong> — {Math.abs(tmvModel(glob.tme, glob.demarque) - glob.tmv) <= 1.5 ? "consistent with the TMV set." : "the TMV set does not reconcile."}</span>
             <span style={{ marginLeft: "auto" }}><Chip color={Math.abs(tmvModel(glob.tme, glob.demarque) - glob.tmv) <= 1.5 ? T.ok : T.bad}>{Math.abs(tmvModel(glob.tme, glob.demarque) - glob.tmv) <= 1.5 ? "Chain consistent" : "To fix"}</Chip></span>
           </div>
-          <div style={{ marginTop: 14 }}><button onClick={() => setStep(2)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}>Break down by department <ArrowRight size={14} /></button></div>
+          <div style={{ marginTop: 14 }}><button onClick={validateGlobal} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}>{globValid ? "Global budget validated — go to the breakdown" : "Validate the global budget and break it down"} <ArrowRight size={14} /></button></div>
         </div>
       )}
 
@@ -2671,6 +2829,7 @@ function BudgetModule({ fw }) {
         <div style={cardB}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
             <Layers size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Breakdown by department</span>
+            {globValid ? <Chip color={T.ok}>Global budget validated · {validatedAt}</Chip> : <Chip color={T.warn}>{globValidation ? "Global budget changed — validate it again in step 1" : "Global budget not validated"}</Chip>}
             <ResetBtn onClick={() => { setDepts(BUDGET_DEPTS.map((d) => ({ ...d }))); setSentAt(null); setMailOpen(null); }} />
           </div>
           <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Editable split of the 5 indicators. The sum of the budgets must equal the global budget ({u(glob.budget)} M€).</div>
@@ -2695,6 +2854,7 @@ function BudgetModule({ fw }) {
               </tbody>
             </table>
           </div>
+          <OfferBreakdown glob={glob} dept={depts.find((d) => d.n === BUDGET_OFFERS_DEPT) || depts[0]} validated={globValid} validatedAt={validatedAt} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
             <button onClick={() => setSentAt(new Date().toLocaleDateString("fr-FR"))} disabled={!sumOk} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: sumOk ? "pointer" : "default", background: sumOk ? T.accent : T.line, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}><Send size={14} /> Send targets to department heads</button>
             {!sumOk && <span style={{ fontSize: 11.5, color: T.bad }}>Adjust the budgets to match the global total before sending.</span>}
@@ -3266,36 +3426,529 @@ function CO2Monitoring({ glob, depts }) {
   );
 }
 
-function MonitoringPage({ fw }) {
-  const [view, setView] = useState("financial");
+/* ============================================================
+   Business ontology — owned by IT Data (in-memory model, state held in App)
+   ============================================================ */
+const ONTOLOGY_DOMAINS = ["Finance", "CSR", "Market", "Collection", "Product", "Go to Market", "KFI"];
+const ONTOLOGY_TYPES = ["Entity", "Document", "Measure", "Decision"];
+const ONTOLOGY_TYPE_C = { Entity: "#0053A0", Document: "#4B90CD", Measure: "#3fb27f", Decision: "#dfa93f" };
+const ONTOLOGY_VERBS = ["contains", "contributes to", "requests", "assigns", "is broken down into", "frames", "submits", "drives", "consumes", "constrains", "feeds"];
+const ONTOLOGY_OBJECTS = [
+  { id: "global-budget", name: "Global Budget", type: "Measure", domain: "Finance", desc: "Group envelope set top-down for the fiscal year (M€, markdown, PVM, TME, TMV)." },
+  { id: "dept-budget", name: "Department Budget", type: "Measure", domain: "Finance", desc: "Breakdown of the global budget by department, including Offers & Collections." },
+  { id: "business-rule", name: "Business Rule", type: "Decision", domain: "Finance", desc: "Group rule constraining objects: envelopes, thresholds and ceilings." },
+  { id: "co2-budget", name: "CO₂ Budget", type: "Measure", domain: "CSR", desc: "Carbon envelope (t CO₂e) = volume × intensity, broken down by department." },
+  { id: "market-brief", name: "Market Brief", type: "Document", domain: "Market", desc: "Synthesized market intention, copied read-only to the collection and product levels." },
+  { id: "collection", name: "Collection", type: "Entity", domain: "Collection", desc: "Season collection (Baby S1 2027) grouping the collection structures and offers." },
+  { id: "offer", name: "Offer", type: "Entity", domain: "Product", desc: "Offer line under Offers & Collections, with its budget, markdown, price and margins." },
+  { id: "product", name: "Product", type: "Entity", domain: "Product", desc: "Collection structure broken down into colourway references, with PVI, volume and footprint." },
+  { id: "country", name: "Country", type: "Entity", domain: "Go to Market", desc: "Country and its stores; submits requested volumes and prices for each offer." },
+  { id: "store-submission", name: "Store Submission", type: "Document", domain: "Go to Market", desc: "Bottom-up needs and desired orders sent by a country's stores for the year." },
+  { id: "supplier", name: "Supplier", type: "Entity", domain: "KFI", desc: "Partner of the KFI panel with commitments, capacity, quality and CSR status." },
+  { id: "forecast", name: "Forecast", type: "Measure", domain: "KFI", desc: "In-season demand forecast received from RELEX by family." },
+  { id: "allocation", name: "Allocation", type: "Decision", domain: "KFI", desc: "Volumes allocated per family and supplier, arbitrated by KFI." },
+];
+const ONTOLOGY_RELATIONS = [
+  { id: "rel-1", source: "global-budget", verb: "is broken down into", target: "dept-budget" },
+  { id: "rel-2", source: "offer", verb: "contributes to", target: "dept-budget" },
+  { id: "rel-3", source: "collection", verb: "contains", target: "offer" },
+  { id: "rel-4", source: "offer", verb: "is broken down into", target: "product" },
+  { id: "rel-5", source: "market-brief", verb: "frames", target: "collection" },
+  { id: "rel-6", source: "store-submission", verb: "requests", target: "offer" },
+  { id: "rel-7", source: "country", verb: "submits", target: "store-submission" },
+  { id: "rel-8", source: "forecast", verb: "drives", target: "allocation" },
+  { id: "rel-9", source: "allocation", verb: "assigns", target: "supplier" },
+  { id: "rel-10", source: "product", verb: "consumes", target: "co2-budget" },
+  { id: "rel-11", source: "business-rule", verb: "constrains", target: "product" },
+  { id: "rel-12", source: "business-rule", verb: "constrains", target: "co2-budget" },
+];
+/* Rules backed by perfRules stay reactive: editing their value here updates st.perfRules and every RuleStatus in the cockpit */
+const ONTOLOGY_RULES = [
+  { id: "rule-ca", name: "Revenue envelope", domain: "Finance", source: "business-rule", target: "global-budget", perf: "caEnvelope", unit: "M€", txt: "Committed revenue of the Baby offer must stay within the Group envelope", status: "Active" },
+  { id: "rule-margin", name: "Minimum margin", domain: "Finance", source: "business-rule", target: "offer", perf: "minMargin", unit: "%", txt: "Every sourcing scenario must keep the margin above the floor", status: "Active" },
+  { id: "rule-co2", name: "Carbon envelope", domain: "CSR", source: "business-rule", target: "co2-budget", perf: "carbonEnvelope", unit: "t CO₂e", txt: "Collection CO₂ must stay within the Group carbon envelope", status: "Active" },
+  { id: "rule-piece", name: "Per-piece footprint ceiling", domain: "CSR", source: "business-rule", target: "product", perf: "maxProductCO2", unit: "kg CO₂e/piece", txt: "No product above the per-piece CO₂ ceiling", status: "Active" },
+  { id: "rule-brief", name: "Brief cascade", domain: "Market", source: "market-brief", target: "collection", txt: "A collection brief must reference the latest synthesized market brief", status: "Draft" },
+  { id: "rule-5050", name: "France / International 50-50", domain: "Go to Market", source: "country", target: "store-submission", txt: "Requested value must converge towards 50 % France / 50 % international", status: "Draft" },
+  { id: "rule-min", name: "Supplier minimum commitments", domain: "KFI", source: "allocation", target: "supplier", txt: "Allocations must respect each partner's minimum commitment or a formalised catch-up plan", status: "Active" },
+];
+const ONTOLOGY_INITIAL = { objects: ONTOLOGY_OBJECTS, relations: ONTOLOGY_RELATIONS, rules: ONTOLOGY_RULES };
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "object";
+
+function OntologyPage({ st, ontology, setOntology }) {
+  const [domain, setDomain] = useState("Finance");
+  const [selected, setSelected] = useState(null);
+  const [objForm, setObjForm] = useState({ name: "", type: "Entity", desc: "" });
+  const [relForm, setRelForm] = useState({ source: "", verb: ONTOLOGY_VERBS[0], target: "" });
+  const [ruleForm, setRuleForm] = useState({ name: "", source: "", target: "", txt: "", status: "Draft" });
+  const { objects, relations, rules } = ontology;
+  const byId = (id) => objects.find((o) => o.id === id);
+  const domainObjs = objects.filter((o) => o.domain === domain);
+  const domainIds = new Set(domainObjs.map((o) => o.id));
+  const domainRels = relations.filter((r) => domainIds.has(r.source) || domainIds.has(r.target));
+  const neighbourIds = new Set(domainRels.flatMap((r) => [r.source, r.target]).filter((id) => !domainIds.has(id)));
+  const nodes = [...domainObjs, ...objects.filter((o) => neighbourIds.has(o.id))];
+  const domainRules = rules.filter((r) => r.domain === domain);
+  const inputSt = { background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "7px 9px", fontSize: 12, color: T.ink, outline: "none", fontFamily: SANS, minWidth: 0 };
+  const selSt = { ...inputSt, cursor: "pointer", fontWeight: 700 };
+  const addBtn = (ok) => ({ display: "inline-flex", alignItems: "center", gap: 6, cursor: ok ? "pointer" : "not-allowed", opacity: ok ? 1 : 0.5, background: T.accent, color: "#ffffff", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 11.5, fontWeight: 800, fontFamily: SANS });
+
+  const addObject = () => {
+    const name = objForm.name.trim(); if (!name) return;
+    let id = slugify(name); if (byId(id)) id = `${id}-${objects.length + 1}`;
+    setOntology((o) => ({ ...o, objects: [...o.objects, { id, name, type: objForm.type, domain, desc: objForm.desc.trim() || "Added by IT Data (simulated object)", added: true }] }));
+    setObjForm({ name: "", type: "Entity", desc: "" }); setSelected(id);
+  };
+  const addRelation = () => {
+    if (!relForm.source || !relForm.target || relForm.source === relForm.target || !relForm.verb.trim()) return;
+    setOntology((o) => ({ ...o, relations: [...o.relations, { id: `rel-${o.relations.length + 1}-${Date.now() % 1000}`, source: relForm.source, verb: relForm.verb.trim(), target: relForm.target, added: true }] }));
+    setRelForm({ source: "", verb: ONTOLOGY_VERBS[0], target: "" });
+  };
+  const addRule = () => {
+    if (!ruleForm.name.trim() || !ruleForm.source || !ruleForm.target) return;
+    setOntology((o) => ({ ...o, rules: [...o.rules, { id: `rule-${o.rules.length + 1}-${Date.now() % 1000}`, name: ruleForm.name.trim(), domain, source: ruleForm.source, target: ruleForm.target, txt: ruleForm.txt.trim() || "Rule added by IT Data (simulated)", status: ruleForm.status, added: true }] }));
+    setRuleForm({ name: "", source: "", target: "", txt: "", status: "Draft" });
+  };
+  const toggleRule = (id) => setOntology((o) => ({ ...o, rules: o.rules.map((r) => (r.id === id ? { ...r, status: r.status === "Active" ? "Draft" : "Active" } : r)) }));
+  const setRuleValue = (perf, v) => st.setPerfRules((r) => ({ ...r, [perf]: v }));
+
+  /* Light graph: nodes on an ellipse, relations as lines with their verb (SVG, no library) */
+  const W = 640, H = 340, cxC = 320, cyC = 170, rx = 250, ry = 120;
+  const pos = {}; nodes.forEach((n, i) => { const a = (2 * Math.PI * i) / Math.max(1, nodes.length) - Math.PI / 2; pos[n.id] = { x: cxC + rx * Math.cos(a), y: cyC + ry * Math.sin(a) }; });
+  const selObj = selected ? byId(selected) : null;
+  const selRels = selObj ? relations.filter((r) => r.source === selObj.id || r.target === selObj.id) : [];
+
   return (
     <div>
-      <PageHeader
-        title="Monitoring"
-        desc="Single annual follow-up of the fiscal year: financial and CO₂ trajectories month by month, fed live by the Financial Framework and CO₂ Framework."
-        expert={{ role: "Performance Leader", txt: "Monitors actuals against the phased frameworks, raises alerts and projects the year-end for the Group." }}
-      />
-      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-        {[{ id: "financial", label: "Financial monitoring", icon: Wallet, c: T.accent }, { id: "co2", label: "CO₂ monitoring", icon: Leaf, c: G }].map((v) => {
-          const on = view === v.id;
-          return (
-            <button key={v.id} onClick={() => setView(v.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: on ? v.c : T.panel2, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? v.c : T.line}`, borderRadius: 999, padding: "8px 15px", fontSize: 12, fontWeight: 700, fontFamily: SANS }}>
-              <v.icon size={13} /> {v.label}
-            </button>
-          );
+      <PageHeader title="Business ontology" desc="The common model linking the business objects of the Control Tower: budgets, briefs, collections, offers, products, countries, store submissions, suppliers, forecasts, allocations and the Group rules that constrain them." expert={{ role: "IT Data", txt: "IT Data owns the ontology: objects, relations and business rules are maintained here and consumed by every cockpit." }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <Chip color={T.accent}>Owned by IT Data</Chip>
+        <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>{objects.length} objects · {relations.length} relations · {rules.length} rules · in-memory simulation</span>
+        <span style={{ marginLeft: "auto", display: "inline-flex", gap: 8, flexWrap: "wrap", fontSize: 10.5, color: T.sub }}>
+          <span style={{ fontWeight: 700, color: T.faint, textTransform: "uppercase", letterSpacing: 0.4 }}>Legend</span>
+          {ONTOLOGY_TYPES.map((t) => <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: 99, background: ONTOLOGY_TYPE_C[t] }} />{t}</span>)}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 16, borderTop: `2px solid ${T.faint}` }} />relation</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 16, borderTop: `2px dashed ${T.warn}` }} />rule</span>
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        {ONTOLOGY_DOMAINS.map((d) => {
+          const on = domain === d;
+          return <button key={d} onClick={() => { setDomain(d); setSelected(null); }} style={{ cursor: "pointer", background: on ? T.accent : T.panel, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 999, padding: "7px 13px", fontSize: 12, fontWeight: 700, fontFamily: SANS }}>{d} <span style={{ fontFamily: MONO, fontSize: 10, opacity: 0.8 }}>{objects.filter((o) => o.domain === d).length}</span></button>;
         })}
       </div>
-      {view === "financial" ? <FinancialMonitoring glob={fw.budgetGlob} depts={fw.budgetDepts} /> : <CO2Monitoring glob={fw.co2Glob} depts={fw.co2Depts} />}
+
+      {/* Graph */}
+      <div style={cardB}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+          <Network size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{domain} — object graph</span>
+          <span style={{ fontSize: 11.5, color: T.faint }}>{domainObjs.length} domain objects, {nodes.length - domainObjs.length} linked objects from other domains (dashed) · click a node</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 520, height: "auto", display: "block", maxHeight: 420 }}>
+          {domainRels.map((r) => {
+            const a = pos[r.source], b = pos[r.target]; if (!a || !b) return null;
+            const hi = selected && (r.source === selected || r.target === selected);
+            return (
+              <g key={r.id}>
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={hi ? T.accent : T.line} strokeWidth={hi ? 2 : 1.2} />
+                <text x={a.x + (b.x - a.x) * 0.36} y={a.y + (b.y - a.y) * 0.36 - 4} textAnchor="middle" fontSize="8.5" fontFamily={MONO} fill={hi ? T.accent : T.faint}>{r.verb}</text>
+              </g>
+            );
+          })}
+          {domainRules.map((r) => {
+            const a = pos[r.source], b = pos[r.target]; if (!a || !b || r.source === r.target) return null;
+            return <line key={r.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={r.status === "Active" ? T.warn : T.line} strokeWidth="1.2" strokeDasharray="5 4" />;
+          })}
+          {nodes.map((n) => {
+            const p = pos[n.id], own = n.domain === domain, on = selected === n.id;
+            return (
+              <g key={n.id} onClick={() => setSelected(on ? null : n.id)} style={{ cursor: "pointer" }}>
+                <circle cx={p.x} cy={p.y} r={on ? 13 : 10} fill={own ? ONTOLOGY_TYPE_C[n.type] : "#ffffff"} stroke={ONTOLOGY_TYPE_C[n.type]} strokeWidth={own ? 1 : 1.5} strokeDasharray={own ? "0" : "3 2"} />
+                <text x={p.x} y={p.y + (p.y < cyC ? -16 : 24)} textAnchor="middle" fontSize="10" fontFamily={SANS} fontWeight={on ? 800 : 600} fill={T.ink}>{n.name}</text>
+              </g>
+            );
+          })}
+        </svg>
+        </div>
+        {selObj && (
+          <div style={{ marginTop: 8, background: T.panel2, border: `1px solid ${ONTOLOGY_TYPE_C[selObj.type]}66`, borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{selObj.name}</span><Chip color={ONTOLOGY_TYPE_C[selObj.type]}>{selObj.type}</Chip><span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>{selObj.domain} · {selObj.id}{selObj.added ? " · added in session" : ""}</span></div>
+            <div style={{ fontSize: 11.5, color: T.sub, marginTop: 4, lineHeight: 1.45 }}>{selObj.desc}</div>
+            <div style={{ fontSize: 11, color: T.sub, marginTop: 6 }}>{selRels.length ? selRels.map((r) => <span key={r.id} style={{ display: "inline-block", marginRight: 10 }}><strong style={{ color: T.ink }}>{byId(r.source)?.name}</strong> {r.verb} <strong style={{ color: T.ink }}>{byId(r.target)?.name}</strong></span>) : "no relation yet"}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
+        {/* Objects */}
+        <div style={{ ...cardB, marginBottom: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><Boxes size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Objects</span><span style={{ fontSize: 11, color: T.faint }}>{domain}</span></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+            {domainObjs.map((o) => (
+              <button key={o.id} onClick={() => setSelected(selected === o.id ? null : o.id)} style={{ textAlign: "left", cursor: "pointer", background: selected === o.id ? `${ONTOLOGY_TYPE_C[o.type]}12` : T.panel2, border: `1px solid ${selected === o.id ? ONTOLOGY_TYPE_C[o.type] : T.line}`, borderRadius: 9, padding: "8px 10px", fontFamily: SANS }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}><span style={{ width: 9, height: 9, borderRadius: 99, background: ONTOLOGY_TYPE_C[o.type] }} /><span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{o.name}</span><Chip color={ONTOLOGY_TYPE_C[o.type]}>{o.type}</Chip>{o.added && <Chip color={T.human}>new</Chip>}</div>
+                <div style={{ fontSize: 10.5, color: T.faint, marginTop: 3, lineHeight: 1.4 }}>{o.desc}</div>
+              </button>
+            ))}
+            {domainObjs.length === 0 && <div style={{ fontSize: 11.5, color: T.faint }}>No object in this domain yet.</div>}
+          </div>
+          <span style={microLbl}>Add a simulated object to {domain}</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, marginBottom: 6 }}>
+            <input value={objForm.name} onChange={(e) => setObjForm({ ...objForm, name: e.target.value })} placeholder="Object name" style={inputSt} />
+            <select value={objForm.type} onChange={(e) => setObjForm({ ...objForm, type: e.target.value })} style={selSt}>{ONTOLOGY_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+          </div>
+          <input value={objForm.desc} onChange={(e) => setObjForm({ ...objForm, desc: e.target.value })} placeholder="Short description" style={{ ...inputSt, width: "100%", boxSizing: "border-box", marginBottom: 8 }} />
+          <button onClick={addObject} disabled={!objForm.name.trim()} style={addBtn(!!objForm.name.trim())}><Check size={12} /> Add object</button>
+        </div>
+
+        {/* Relations */}
+        <div style={{ ...cardB, marginBottom: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><GitBranch size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Relations</span><span style={{ fontSize: 11, color: T.faint }}>{domainRels.length} involving {domain}</span></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
+            {domainRels.map((r) => (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 11.5, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 10px" }}>
+                <strong style={{ color: T.ink }}>{byId(r.source)?.name || r.source}</strong><span style={{ fontFamily: MONO, fontSize: 10.5, color: T.accent }}>{r.verb}</span><strong style={{ color: T.ink }}>{byId(r.target)?.name || r.target}</strong>{r.added && <Chip color={T.human}>new</Chip>}
+              </div>
+            ))}
+            {domainRels.length === 0 && <div style={{ fontSize: 11.5, color: T.faint }}>No relation yet for this domain.</div>}
+          </div>
+          <span style={microLbl}>Add a simulated relation between two existing objects</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6, marginBottom: 8 }}>
+            <select value={relForm.source} onChange={(e) => setRelForm({ ...relForm, source: e.target.value })} style={selSt}><option value="">Source object…</option>{objects.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.domain})</option>)}</select>
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 6 }}>
+              <select value={ONTOLOGY_VERBS.includes(relForm.verb) ? relForm.verb : ""} onChange={(e) => setRelForm({ ...relForm, verb: e.target.value || relForm.verb })} style={selSt}>{ONTOLOGY_VERBS.map((v) => <option key={v}>{v}</option>)}<option value="">custom…</option></select>
+              <input value={relForm.verb} onChange={(e) => setRelForm({ ...relForm, verb: e.target.value })} placeholder="verb" style={inputSt} />
+            </div>
+            <select value={relForm.target} onChange={(e) => setRelForm({ ...relForm, target: e.target.value })} style={selSt}><option value="">Target object…</option>{objects.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.domain})</option>)}</select>
+          </div>
+          <button onClick={addRelation} disabled={!relForm.source || !relForm.target || relForm.source === relForm.target || !relForm.verb.trim()} style={addBtn(relForm.source && relForm.target && relForm.source !== relForm.target && relForm.verb.trim())}><Check size={12} /> Add relation</button>
+        </div>
+
+        {/* Business rules */}
+        <div style={{ ...cardB, marginBottom: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><ShieldCheck size={15} color={T.warn} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Business rules</span><span style={{ fontSize: 11, color: T.faint }}>{domainRules.length} in {domain}</span></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+            {domainRules.map((r) => (
+              <div key={r.id} style={{ background: T.panel2, border: `1px dashed ${r.status === "Active" ? T.warn : T.line}`, borderRadius: 9, padding: "8px 10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{r.name}</span>
+                  <button onClick={() => toggleRule(r.id)} style={{ cursor: "pointer", background: "transparent", border: "none", padding: 0 }}><Chip color={r.status === "Active" ? T.ok : T.faint}>{r.status}</Chip></button>
+                  {r.added && <Chip color={T.human}>new</Chip>}
+                  {r.perf && <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5 }}><input type="number" value={st.perfRules[r.perf]} onChange={(e) => setRuleValue(r.perf, e.target.value === "" ? 0 : +e.target.value)} step={r.perf === "maxProductCO2" ? 0.1 : r.perf === "minMargin" ? 0.5 : 100} style={{ ...inputSt, width: 84, fontFamily: MONO, fontWeight: 700, textAlign: "right" }} /><span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>{r.unit}</span></span>}
+                </div>
+                <div style={{ fontSize: 11, color: T.sub, marginTop: 4, lineHeight: 1.45 }}><strong style={{ color: T.ink }}>{byId(r.source)?.name || r.source}</strong> → <strong style={{ color: T.ink }}>{byId(r.target)?.name || r.target}</strong> · {r.txt}{r.perf ? ` (current value ${st.perfRules[r.perf].toLocaleString("fr-FR")} ${r.unit}, reactive in every cockpit)` : ""}</div>
+              </div>
+            ))}
+            {domainRules.length === 0 && <div style={{ fontSize: 11.5, color: T.faint }}>No rule in this domain yet.</div>}
+          </div>
+          <span style={microLbl}>Add a simulated rule to {domain}</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, marginBottom: 6 }}>
+            <input value={ruleForm.name} onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })} placeholder="Rule name" style={inputSt} />
+            <select value={ruleForm.status} onChange={(e) => setRuleForm({ ...ruleForm, status: e.target.value })} style={selSt}><option>Draft</option><option>Active</option></select>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+            <select value={ruleForm.source} onChange={(e) => setRuleForm({ ...ruleForm, source: e.target.value })} style={selSt}><option value="">Source…</option>{objects.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
+            <select value={ruleForm.target} onChange={(e) => setRuleForm({ ...ruleForm, target: e.target.value })} style={selSt}><option value="">Target…</option>{objects.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
+          </div>
+          <input value={ruleForm.txt} onChange={(e) => setRuleForm({ ...ruleForm, txt: e.target.value })} placeholder="Readable rule (e.g. every offer must keep TMV above 48 %)" style={{ ...inputSt, width: "100%", boxSizing: "border-box", marginBottom: 8 }} />
+          <button onClick={addRule} disabled={!ruleForm.name.trim() || !ruleForm.source || !ruleForm.target} style={addBtn(ruleForm.name.trim() && ruleForm.source && ruleForm.target)}><Check size={12} /> Add rule</button>
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ============================================================
-   App
+   Store submissions — bottom-up needs sent by each country's stores,
+   confronted with the offer pushed top-down. Single simulated source;
+   a future API can replace STORE_SUBMISSIONS without touching the UI.
+   offerId references BUDGET_OFFERS (one offer referential).
    ============================================================ */
+const STORE_SUBMISSIONS = {
+  source: "Simulated store submissions",
+  lastSubmission: "18/09/2026",
+  target: { france: 50, international: 50 },
+  countries: [
+    { countryCode: "FR", countryName: "France", region: "France", storeCount: 512, status: "Submitted", submittedAt: "18/09/2026", offers: [
+      { offerId: "of-baby-night", pushedVolume: 640000, requestedVolume: 598000, requestedPrice: 11.3 },
+      { offerId: "of-baby-under", pushedVolume: 980000, requestedVolume: 905000, requestedPrice: 9.2 },
+      { offerId: "of-baby-licences", pushedVolume: 330000, requestedVolume: 352000, requestedPrice: 12.9 },
+      { offerId: "of-girls", pushedVolume: 560000, requestedVolume: 512000, requestedPrice: 13.9 },
+      { offerId: "of-boys", pushedVolume: 450000, requestedVolume: 421000, requestedPrice: 13.4 },
+      { offerId: "of-capsules", pushedVolume: 110000, requestedVolume: 96000, requestedPrice: 15.2 },
+    ] },
+    { countryCode: "ES", countryName: "Spain", region: "International", storeCount: 68, status: "Submitted", submittedAt: "17/09/2026", offers: [
+      { offerId: "of-baby-night", pushedVolume: 90000, requestedVolume: 112000, requestedPrice: 11.9 },
+      { offerId: "of-baby-under", pushedVolume: 140000, requestedVolume: 171000, requestedPrice: 9.6 },
+      { offerId: "of-baby-licences", pushedVolume: 45000, requestedVolume: 41000, requestedPrice: 12.4 },
+      { offerId: "of-girls", pushedVolume: 80000, requestedVolume: 93000, requestedPrice: 14.4 },
+      { offerId: "of-boys", pushedVolume: 65000, requestedVolume: 74000, requestedPrice: 13.9 },
+      { offerId: "of-capsules", pushedVolume: 15000, requestedVolume: 19000, requestedPrice: 16.1 },
+    ] },
+    { countryCode: "IT", countryName: "Italy", region: "International", storeCount: 41, status: "Partial", submittedAt: "12/09/2026", offers: [
+      { offerId: "of-baby-night", pushedVolume: 55000, requestedVolume: 61000, requestedPrice: 11.8 },
+      { offerId: "of-baby-under", pushedVolume: 85000, requestedVolume: 88000, requestedPrice: 9.5 },
+      { offerId: "of-baby-licences", pushedVolume: 28000, requestedVolume: null, requestedPrice: null },
+      { offerId: "of-girls", pushedVolume: 50000, requestedVolume: 46000, requestedPrice: 14.0 },
+      { offerId: "of-boys", pushedVolume: 40000, requestedVolume: null, requestedPrice: null },
+      { offerId: "of-capsules", pushedVolume: 9000, requestedVolume: null, requestedPrice: null },
+    ] },
+    { countryCode: "PL", countryName: "Poland", region: "International", storeCount: 19, status: "Submitted", submittedAt: "16/09/2026", offers: [
+      { offerId: "of-baby-night", pushedVolume: 26000, requestedVolume: 34000, requestedPrice: 10.9 },
+      { offerId: "of-baby-under", pushedVolume: 40000, requestedVolume: 52000, requestedPrice: 8.9 },
+      { offerId: "of-baby-licences", pushedVolume: 12000, requestedVolume: 15000, requestedPrice: 11.6 },
+      { offerId: "of-girls", pushedVolume: 22000, requestedVolume: 27000, requestedPrice: 13.2 },
+      { offerId: "of-boys", pushedVolume: 18000, requestedVolume: 22000, requestedPrice: 12.8 },
+      { offerId: "of-capsules", pushedVolume: 4000, requestedVolume: 5000, requestedPrice: 14.9 },
+    ] },
+    { countryCode: "BE", countryName: "Belgium", region: "International", storeCount: 27, status: "Submitted", submittedAt: "15/09/2026", offers: [
+      { offerId: "of-baby-night", pushedVolume: 34000, requestedVolume: 35000, requestedPrice: 11.6 },
+      { offerId: "of-baby-under", pushedVolume: 52000, requestedVolume: 51000, requestedPrice: 9.4 },
+      { offerId: "of-baby-licences", pushedVolume: 17000, requestedVolume: 15000, requestedPrice: 12.3 },
+      { offerId: "of-girls", pushedVolume: 30000, requestedVolume: 31000, requestedPrice: 14.2 },
+      { offerId: "of-boys", pushedVolume: 24000, requestedVolume: 24000, requestedPrice: 13.6 },
+      { offerId: "of-capsules", pushedVolume: 6000, requestedVolume: 7000, requestedPrice: 15.9 },
+    ] },
+    { countryCode: "MA", countryName: "Morocco", region: "International", storeCount: 24, status: "Missing", submittedAt: null, offers: [
+      { offerId: "of-baby-night", pushedVolume: 30000, requestedVolume: null, requestedPrice: null },
+      { offerId: "of-baby-under", pushedVolume: 46000, requestedVolume: null, requestedPrice: null },
+      { offerId: "of-baby-licences", pushedVolume: 15000, requestedVolume: null, requestedPrice: null },
+      { offerId: "of-girls", pushedVolume: 26000, requestedVolume: null, requestedPrice: null },
+      { offerId: "of-boys", pushedVolume: 21000, requestedVolume: null, requestedPrice: null },
+      { offerId: "of-capsules", pushedVolume: 5000, requestedVolume: null, requestedPrice: null },
+    ] },
+  ],
+  /* light monthly evolution: countries that had submitted by the end of each month */
+  monthly: [["Jun.", 1], ["Jul.", 2], ["Aug.", 3], ["Sept.", 5]],
+};
+const STORE_TOL = { volumePct: 5, pricePct: 3 };
+const STORE_STATUS_C = { Submitted: "#3fb27f", Partial: "#dfa93f", Missing: "#e05a5a" };
+/* Pure confrontation: pushed (top-down) vs requested (bottom-up) per offer and per country */
+function computeStoreSubmissions(data, offers, countryCode = "ALL") {
+  const offerOf = (id) => offers.find((o) => o.id === id) || { id, name: id, pvm: 0 };
+  const volLabel = (pct) => (pct > STORE_TOL.volumePct ? "Over-demand" : pct < -STORE_TOL.volumePct ? "Under-demand" : "Balanced");
+  const priceLabel = (pct) => (pct == null ? "No request" : pct > STORE_TOL.pricePct ? "Price above push" : pct < -STORE_TOL.pricePct ? "Price below push" : "Aligned");
+  const countries = data.countries.map((c) => {
+    const answered = c.offers.filter((x) => x.requestedVolume != null);
+    const pushed = c.offers.reduce((s, x) => s + x.pushedVolume, 0);
+    const requested = answered.reduce((s, x) => s + x.requestedVolume, 0);
+    const pushedValue = c.offers.reduce((s, x) => s + x.pushedVolume * offerOf(x.offerId).pvm, 0) / 1e6;
+    const requestedValue = answered.reduce((s, x) => s + x.requestedVolume * x.requestedPrice, 0) / 1e6;
+    const pushedAnswered = answered.reduce((s, x) => s + x.pushedVolume, 0);
+    const gap = requested - pushedAnswered;
+    const gapPct = pushedAnswered ? (gap / pushedAnswered) * 100 : 0;
+    const wPrice = requested ? answered.reduce((s, x) => s + x.requestedVolume * x.requestedPrice, 0) / requested : null;
+    const wPushPrice = pushedAnswered ? answered.reduce((s, x) => s + x.pushedVolume * offerOf(x.offerId).pvm, 0) / pushedAnswered : null;
+    const priceGapPct = wPrice != null && wPushPrice ? (wPrice / wPushPrice - 1) * 100 : null;
+    let reco = c.status === "Missing" ? "Chase the submission — no requested volume yet, pushed offer kept as is" : gapPct > STORE_TOL.volumePct ? `Increase the pushed volumes by ${fr1(gapPct)} %` : gapPct < -STORE_TOL.volumePct ? `Reduce the pushed volumes by ${fr1(-gapPct)} %` : "Maintain the pushed volumes";
+    if (priceGapPct != null && Math.abs(priceGapPct) > STORE_TOL.pricePct) reco += ` · review the price (requested ${fr2(wPrice)} € vs pushed ${fr2(wPushPrice)} €)`;
+    if (c.status === "Partial") reco += ` · ${c.offers.length - answered.length} offer${c.offers.length - answered.length > 1 ? "s" : ""} still missing`;
+    return { ...c, answered: answered.length, pushed, requested, pushedAnswered, gap, gapPct, volLabel: c.status === "Missing" ? "No request" : volLabel(gapPct), pushedValue, requestedValue, wPrice, wPushPrice, priceGapPct, priceLabel: priceLabel(priceGapPct), reco };
+  });
+  const sel = countryCode === "ALL" ? data.countries : data.countries.filter((c) => c.countryCode === countryCode);
+  const offerRows = offers.map((o) => {
+    const entries = sel.flatMap((c) => c.offers.filter((x) => x.offerId === o.id));
+    const answered = entries.filter((x) => x.requestedVolume != null);
+    const pushed = entries.reduce((s, x) => s + x.pushedVolume, 0);
+    const pushedAnswered = answered.reduce((s, x) => s + x.pushedVolume, 0);
+    const requested = answered.reduce((s, x) => s + x.requestedVolume, 0);
+    const reqPrice = requested ? answered.reduce((s, x) => s + x.requestedVolume * x.requestedPrice, 0) / requested : null;
+    const gap = requested - pushedAnswered;
+    const gapPct = pushedAnswered ? (gap / pushedAnswered) * 100 : 0;
+    const priceGapPct = reqPrice != null && o.pvm ? (reqPrice / o.pvm - 1) * 100 : null;
+    return { ...o, pushed, pushedAnswered, requested, gap, gapPct, volLabel: answered.length ? volLabel(gapPct) : "No request", pushedPrice: o.pvm, reqPrice, priceGapPct, priceLabel: priceLabel(priceGapPct), missing: entries.length - answered.length };
+  });
+  const franceValue = countries.filter((c) => c.region === "France").reduce((s, c) => s + c.requestedValue, 0);
+  const intlValue = countries.filter((c) => c.region !== "France").reduce((s, c) => s + c.requestedValue, 0);
+  const totalValue = franceValue + intlValue;
+  const franceShare = totalValue ? (franceValue / totalValue) * 100 : 0;
+  const pushedFrance = countries.filter((c) => c.region === "France").reduce((s, c) => s + c.pushedValue, 0);
+  const pushedTotal = countries.reduce((s, c) => s + c.pushedValue, 0);
+  return { countries, offerRows, franceValue, intlValue, totalValue, franceShare, intlShare: 100 - franceShare, pushedFranceShare: pushedTotal ? (pushedFrance / pushedTotal) * 100 : 0, target: data.target, gapToTarget: franceShare - data.target.france, submitted: countries.filter((c) => c.status === "Submitted").length };
+}
+
+function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions by country" }) {
+  const [country, setCountry] = useState("ALL");
+  const data = STORE_SUBMISSIONS;
+  const r = useMemo(() => computeStoreSubmissions(data, BUDGET_OFFERS, country), [country]);
+  const selC = country === "ALL" ? null : r.countries.find((c) => c.countryCode === country);
+  const th = (align) => ({ textAlign: align, padding: "6px 6px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" });
+  const td = { padding: "7px 6px", borderBottom: `1px solid ${T.lineSoft}`, fontSize: 12, whiteSpace: "nowrap" };
+  const num = { ...td, textAlign: "right", fontFamily: MONO, color: T.sub };
+  const volC = (l) => (l === "Over-demand" ? T.warn : l === "Under-demand" ? T.bad : l === "Balanced" ? T.ok : T.faint);
+  const priceC = (l) => (l === "Aligned" ? T.ok : l === "No request" ? T.faint : T.warn);
+  const sgn = (n, d = 0) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+  const kunits = (n) => `${u(Math.round(n / 1000))} k`;
+  return (
+    <div style={cardB}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+        <Globe2 size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{title}</span>
+        <Chip color={T.warn}>{data.source}</Chip>
+        <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>last submission {data.lastSubmission} · {r.submitted} / {r.countries.length} countries submitted</span>
+        <select value={country} onChange={(e) => setCountry(e.target.value)} style={{ marginLeft: "auto", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none", maxWidth: "100%" }}>
+          <option value="ALL">All countries</option>
+          {data.countries.map((c) => <option key={c.countryCode} value={c.countryCode}>{c.countryName} ({c.storeCount} stores)</option>)}
+        </select>
+      </div>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>The offer is pushed top-down by the Product, Market and Collection Managers; each country's stores submit their needs bottom-up. Gaps are computed from the simulated submissions: volume tolerance ±{STORE_TOL.volumePct} %, price tolerance ±{STORE_TOL.pricePct} %.</div>
+
+      {/* 50/50 KPI */}
+      <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 13px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>France / International — requested commercial value</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: T.sub }}>{fr1(r.franceValue)} M€ France · {fr1(r.intlValue)} M€ international</span>
+          <span style={{ marginLeft: "auto" }}><Chip color={Math.abs(r.gapToTarget) <= 5 ? T.ok : Math.abs(r.gapToTarget) <= 15 ? T.warn : T.bad}>{fr1(r.franceShare)} % France vs {r.target.france} % target · gap {sgn(r.gapToTarget, 1)} pts</Chip></span>
+        </div>
+        <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", marginTop: 8, border: `1px solid ${T.line}` }}>
+          <div style={{ width: `${r.franceShare}%`, background: T.accent }} title={`France ${fr1(r.franceShare)} %`} />
+          <div style={{ flex: 1, background: T.human }} title={`International ${fr1(r.intlShare)} %`} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "2px 10px", fontSize: 10.5, fontFamily: MONO, color: T.faint, marginTop: 4 }}>
+          <span>France {fr1(r.franceShare)} % (pushed {fr1(r.pushedFranceShare)} %)</span><span>target {r.target.france} / {r.target.international}</span><span>International {fr1(r.intlShare)} %</span>
+        </div>
+      </div>
+
+      {/* Offers */}
+      <span style={microLbl}>Offers — {country === "ALL" ? "all countries" : selC.countryName}{selC ? ` · ${selC.status}${selC.submittedAt ? ` on ${selC.submittedAt}` : ""}` : ""}</span>
+      <div style={{ overflowX: "auto", marginBottom: 14 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr>{[["Offer", "left"], ["Pushed volume", "right"], ["Requested volume", "right"], ["Volume gap", "right"], ["", "left"], ["Pushed price", "right"], ["Requested price", "right"], ["Price gap", "right"], ["", "left"]].map(([h, a], j) => <th key={j} style={th(a)}>{h}</th>)}</tr></thead>
+          <tbody>
+            {r.offerRows.map((o) => (
+              <tr key={o.id}>
+                <td style={td}><div style={{ fontWeight: 800, color: T.ink }}>{o.name}</div>{o.missing > 0 && country === "ALL" ? <div style={{ fontSize: 10, color: T.faint, fontFamily: MONO }}>{o.missing} {o.missing > 1 ? "countries" : "country"} missing</div> : null}</td>
+                <td style={num}>{kunits(o.pushed)}</td>
+                <td style={{ ...num, color: T.ink, fontWeight: 800 }}>{o.requested ? kunits(o.requested) : "—"}</td>
+                <td style={{ ...num, fontWeight: 800, color: volC(o.volLabel) }}>{o.requested ? `${sgn(o.gap / 1000)} k (${sgn(o.gapPct, 1)} %)` : "—"}</td>
+                <td style={{ ...td, paddingLeft: 4 }}><Chip color={volC(o.volLabel)}>{o.volLabel}</Chip></td>
+                <td style={num}>{fr2(o.pushedPrice)} €</td>
+                <td style={{ ...num, color: T.ink, fontWeight: 800 }}>{o.reqPrice != null ? `${fr2(o.reqPrice)} €` : "—"}</td>
+                <td style={{ ...num, fontWeight: 800, color: priceC(o.priceLabel) }}>{o.priceGapPct != null ? `${sgn(o.reqPrice - o.pushedPrice, 2)} € (${sgn(o.priceGapPct, 1)} %)` : "—"}</td>
+                <td style={{ ...td, paddingLeft: 4 }}><Chip color={priceC(o.priceLabel)}>{o.priceLabel}</Chip></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Countries */}
+      <span style={microLbl}>Countries — pushed vs requested, value and agent recommendation</span>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr>{[["Country", "left"], ["Region", "left"], ["Status", "left"], ["Pushed", "right"], ["Requested", "right"], ["Gap", "right"], ["Value", "right"], ["Share", "right"], ["Recommendation", "left"]].map(([h, a]) => <th key={h} style={th(a)}>{h}</th>)}</tr></thead>
+          <tbody>
+            {r.countries.map((c) => (
+              <tr key={c.countryCode} onClick={() => setCountry(country === c.countryCode ? "ALL" : c.countryCode)} style={{ cursor: "pointer", background: country === c.countryCode ? `${T.accent}10` : "transparent" }}>
+                <td style={{ ...td, fontWeight: 800, color: T.ink }}>{c.countryName} <span style={{ fontSize: 10, color: T.faint, fontFamily: MONO }}>{c.countryCode} · {c.storeCount} stores</span></td>
+                <td style={{ ...td, color: T.sub }}>{c.region}</td>
+                <td style={td}><Chip color={STORE_STATUS_C[c.status]}>{c.status}</Chip></td>
+                <td style={num}>{kunits(c.pushed)}</td>
+                <td style={{ ...num, color: T.ink, fontWeight: 800 }}>{c.requested ? kunits(c.requested) : "—"}</td>
+                <td style={{ ...num, fontWeight: 800, color: volC(c.volLabel) }}>{c.requested ? `${sgn(c.gap / 1000)} k (${sgn(c.gapPct, 1)} %)` : "—"}</td>
+                <td style={num}>{c.requested ? `${fr1(c.requestedValue)} M€` : "—"}</td>
+                <td style={num}>{r.totalValue && c.requested ? `${fr1((c.requestedValue / r.totalValue) * 100)} %` : "—"}</td>
+                <td style={{ ...td, whiteSpace: "normal", minWidth: 220, color: T.sub, fontSize: 11.5, lineHeight: 1.4 }}><Sparkles size={11} color={T.human} style={{ verticalAlign: "-2px", marginRight: 4 }} />{c.reco}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showMonthly && (
+        <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 10 }}>
+          <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 13px" }}>
+            <span style={microLbl}>Submission status by country</span>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{r.countries.map((c) => <Chip key={c.countryCode} color={STORE_STATUS_C[c.status]}>{c.countryName} · {c.status}{c.status === "Partial" ? ` (${c.answered}/${c.offers.length})` : ""}</Chip>)}</div>
+          </div>
+          <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 13px" }}>
+            <span style={microLbl}>Countries submitted — monthly evolution (simulated)</span>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 64 }}>
+              {data.monthly.map(([m, n]) => (
+                <div key={m} style={{ flex: 1, textAlign: "center" }}>
+                  <div style={{ height: `${(n / r.countries.length) * 48}px`, background: T.accent, borderRadius: 4, opacity: 0.85 }} />
+                  <div style={{ fontSize: 9.5, fontFamily: MONO, color: T.faint, marginTop: 3 }}>{m} · {n}/{r.countries.length}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      <div style={{ fontSize: 10.5, color: T.faint, marginTop: 10 }}>Provenance: {data.source} — not real orders. Requested value = requested volume × requested price; pushed price = offer average selling price from the Financial Framework.</div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Monitoring — financial, CO₂ and store submissions views; the role view can force a sub-mode
+   ============================================================ */
+const MONITORING_VIEWS = [
+  { id: "financial", label: "Financial monitoring", icon: Wallet, c: T.accent },
+  { id: "co2", label: "CO₂ monitoring", icon: Leaf, c: G },
+  { id: "store", label: "Store submissions monitoring", icon: Globe2, c: T.human },
+];
+function MonitoringPage({ fw, views = ["financial", "co2"], initial }) {
+  const allowed = MONITORING_VIEWS.filter((v) => views.includes(v.id));
+  const [view, setView] = useState(initial && views.includes(initial) ? initial : allowed[0].id);
+  const current = allowed.some((v) => v.id === view) ? view : allowed[0].id;
+  return (
+    <div>
+      <PageHeader
+        title="Monitoring"
+        desc="Single annual follow-up of the fiscal year: financial and CO₂ trajectories month by month, fed live by the Financial Framework and CO₂ Framework, plus the store submissions confrontation."
+        expert={{ role: "Performance Leader", txt: "Monitors actuals against the phased frameworks, raises alerts and projects the year-end for the Group." }}
+      />
+      {allowed.length > 1 && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+          {allowed.map((v) => {
+            const on = current === v.id;
+            return (
+              <button key={v.id} onClick={() => setView(v.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: on ? v.c : T.panel2, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? v.c : T.line}`, borderRadius: 999, padding: "8px 15px", fontSize: 12, fontWeight: 700, fontFamily: SANS }}>
+                <v.icon size={13} /> {v.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {current === "financial" && <FinancialMonitoring glob={fw.budgetGlob} depts={fw.budgetDepts} />}
+      {current === "co2" && <CO2Monitoring glob={fw.co2Glob} depts={fw.co2Depts} />}
+      {current === "store" && <StoreSubmissionsBlock showMonthly title="Store submissions monitoring" />}
+    </div>
+  );
+}
+
+/* ============================================================
+   App — end-to-end and role-based navigation
+   ============================================================ */
+const ROLE_VIEWS = {
+  "Financial Leader": { tabs: ["financial", "monitoring"], monitoring: { views: ["financial"], initial: "financial" } },
+  "CSR Leader": { tabs: ["co2", "monitoring"], monitoring: { views: ["co2"], initial: "co2" } },
+  "Market Manager": { tabs: ["market", "monitoring"], monitoring: { views: ["store", "financial", "co2"], initial: "store" } },
+  "Collection Manager": { tabs: ["collection", "monitoring"], monitoring: { views: ["store", "financial", "co2"], initial: "store" } },
+  "Product Manager": { tabs: ["product"] },
+  "IT Data": { tabs: ["ontology"] },
+};
+/* Revenue committed by the Baby offer (M€) — compared with the Group envelope rule */
+const REVENUE_COMMITTED = 43.8;
+const ROLES = Object.keys(ROLE_VIEWS);
+const APP_TABS = [
+  { id: "ontology", label: "Ontology", icon: Database },
+  { id: "financial", label: "Financial Framework", icon: Scale },
+  { id: "co2", label: "CO₂ Framework", icon: Leaf },
+  { id: "market", label: "Market Framework", icon: Crown },
+  { id: "collection", label: "Collection Framework", icon: LayoutGrid },
+  { id: "product", label: "Product Manager", icon: Baby },
+  { id: "gtm", label: "Go to Market", icon: ShoppingBag },
+  { id: "itfas", label: "KFI", icon: Factory },
+  { id: "monitoring", label: "Monitoring", icon: TrendingUp },
+];
+const allowedTabs = (mode, role) => (mode === "role" ? ROLE_VIEWS[role].tabs : APP_TABS.map((t) => t.id));
 
 export default function App() {
-  const [tab, setTab] = useState("financial");
+  const [tab, setTab] = useState("ontology");
+  const [viewMode, setViewMode] = useState("endToEnd");
+  const [selectedRole, setSelectedRole] = useState("Financial Leader");
+  const [ontology, setOntology] = useState(ONTOLOGY_INITIAL);
   const [selId, setSelId] = useState(PRODUITS[0].id);
   const [agentId, setAgentId] = useState("essentiel");
   const [territoire, setTerritoire] = useState("Core");
@@ -3338,15 +3991,23 @@ export default function App() {
     [volMap, lowCarbon, delta]
   );
   /* Reactive breach engine */
+  /* Each breach carries a level (breach / watch), the KPIs it affects and, for product rules, the product id, so RuleStatus can sit next to any KPI */
   const breaches = useMemo(() => {
     const b = [];
     PRODUITS.forEach((p) => {
       const v = co2Eff(p);
-      if (v > perfRules.maxProductCO2) b.push({ area: "Offer & Collection", label: `${p.name} — ${v.toLocaleString("fr-FR", { minimumFractionDigits: 1 })} kg CO₂e/piece`, action: "activate a low-carbon material or nearshore sourcing" });
+      const vTxt = v.toLocaleString("fr-FR", { minimumFractionDigits: 1 });
+      if (v > perfRules.maxProductCO2) b.push({ area: "Offer & Collection", level: "breach", kpis: ["footprint"], productId: p.id, label: `${p.name} — ${vTxt} kg CO₂e/piece above the ${perfRules.maxProductCO2.toLocaleString("fr-FR")} kg ceiling`, action: "activate a low-carbon material or nearshore sourcing" });
+      else if (v > perfRules.maxProductCO2 * 0.9) b.push({ area: "Offer & Collection", level: "watch", kpis: ["footprint"], productId: p.id, label: `${p.name} — ${vTxt} kg CO₂e/piece within 10 % of the ceiling`, action: "watch the material mix before store launch" });
     });
-    if (collectionCO2 > perfRules.carbonEnvelope) b.push({ area: "Go to Market", label: `Collection at ${u(Math.round(collectionCO2))} t CO₂e — ${u(Math.round(collectionCO2 - perfRules.carbonEnvelope))} t overrun`, action: "reduce volumes or change the sourcing mix" });
-    if (perfRules.minMargin > 53.2) b.push({ area: "Supply", label: `Euromed nearshore scenario at 53,2 % below the ${perfRules.minMargin.toLocaleString("fr-FR")} % threshold`, action: "negotiate the landed cost or keep a balanced mix" });
-    if (perfRules.carbonEnvelope < 5200) b.push({ area: "KFI", label: "Supplier trajectory incompatible with the target", action: "allocate 4 references to Anatolia Textiles and Taipei Knitworks" });
+    if (REVENUE_COMMITTED > perfRules.caEnvelope) b.push({ area: "Offer & Collection", level: "breach", kpis: ["revenue"], label: `Committed revenue at ${REVENUE_COMMITTED.toLocaleString("fr-FR")} M€ above the ${perfRules.caEnvelope.toLocaleString("fr-FR")} M€ envelope`, action: "cut the offer breadth or renegotiate the envelope with Finance" });
+    else if (REVENUE_COMMITTED > perfRules.caEnvelope * 0.9) b.push({ area: "Offer & Collection", level: "watch", kpis: ["revenue"], label: `Committed revenue at ${REVENUE_COMMITTED.toLocaleString("fr-FR")} M€ within 10 % of the ${perfRules.caEnvelope.toLocaleString("fr-FR")} M€ envelope`, action: "freeze new references until the envelope is confirmed" });
+    if (collectionCO2 > perfRules.carbonEnvelope) b.push({ area: "Go to Market", level: "breach", kpis: ["carbon", "volume"], label: `Collection at ${u(Math.round(collectionCO2))} t CO₂e — ${u(Math.round(collectionCO2 - perfRules.carbonEnvelope))} t overrun`, action: "reduce volumes or change the sourcing mix" });
+    else if (collectionCO2 > perfRules.carbonEnvelope * 0.9) b.push({ area: "Go to Market", level: "watch", kpis: ["carbon", "volume"], label: `Collection at ${u(Math.round(collectionCO2))} t CO₂e — within 10 % of the ${u(perfRules.carbonEnvelope)} t envelope`, action: "hold volumes and favour nearshore scenarios" });
+    if (perfRules.minMargin > 53.2) b.push({ area: "Supply", level: "breach", kpis: ["margin", "price", "sourcing"], label: `Euromed nearshore scenario at 53,2 % below the ${perfRules.minMargin.toLocaleString("fr-FR")} % margin floor`, action: "negotiate the landed cost or keep a balanced mix" });
+    else if (perfRules.minMargin > 52.5) b.push({ area: "Supply", level: "watch", kpis: ["margin", "price", "sourcing"], label: `Euromed nearshore scenario at 53,2 % close to the ${perfRules.minMargin.toLocaleString("fr-FR")} % margin floor`, action: "secure the landed cost before submitting to KFI" });
+    if (perfRules.carbonEnvelope < 5200) b.push({ area: "KFI", level: "breach", kpis: ["supplier", "carbon"], label: `Supplier trajectory incompatible with the ${u(perfRules.carbonEnvelope)} t carbon target`, action: "allocate 4 references to Anatolia Textiles and Taipei Knitworks" });
+    else if (perfRules.carbonEnvelope < 5600) b.push({ area: "KFI", level: "watch", kpis: ["supplier", "carbon"], label: `Supplier trajectory close to the ${u(perfRules.carbonEnvelope)} t carbon target`, action: "secure low-carbon capacity at Anatolia Textiles and Taipei Knitworks" });
     return b;
   }, [perfRules, collectionCO2, lowCarbon, delta]);
 
@@ -3395,31 +4056,36 @@ export default function App() {
   };
   const fw = { budgetGlob, setBudgetGlob, budgetDepts, setBudgetDepts, co2Glob, setCo2Glob, co2Depts, setCo2Depts };
 
-  const TABS = [
-    { id: "financial", label: "Financial Framework", icon: Scale },
-    { id: "co2", label: "CO₂ Framework", icon: Leaf },
-    { id: "market", label: "Market Framework", icon: Crown },
-    { id: "collection", label: "Collection Framework", icon: LayoutGrid },
-    { id: "product", label: "Product Manager", icon: Baby },
-    { id: "gtm", label: "Go to Market", icon: ShoppingBag },
-    { id: "itfas", label: "KFI", icon: Factory },
-    { id: "monitoring", label: "Monitoring", icon: TrendingUp },
-  ];
+  /* Visible tabs: every tab end-to-end, only the role's tabs in role view; the active tab can never be a hidden one */
+  const visibleTabs = useMemo(() => APP_TABS.filter((t) => allowedTabs(viewMode, selectedRole).includes(t.id)), [viewMode, selectedRole]);
+  const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0].id;
+  const selectMode = (m) => { setViewMode(m); const a = allowedTabs(m, selectedRole); if (!a.includes(tab)) setTab(a[0]); };
+  const selectRole = (r) => { setSelectedRole(r); const a = allowedTabs("role", r); if (!a.includes(tab)) setTab(a[0]); };
+  const roleMon = viewMode === "role" ? ROLE_VIEWS[selectedRole].monitoring : null;
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: SANS, color: T.ink }}>
       <div style={{ maxWidth: 1120, margin: "0 auto", padding: "22px 18px 60px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
           <WhiteBadge><img src={KIABI_LOGO} alt="Kiabi" style={{ height: 26, width: "auto", display: "block" }} /></WhiteBadge>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Cockpit — Baby Offer & Kids Collection</div>
-            <div style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>layette collection · 12 collection structures · S1 2027</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>KIABI Control Tower</div>
+          {lowCarbon && <Chip color={T.ok}>🌿 Low-carbon strategy active</Chip>}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", border: `1px solid ${T.line}`, borderRadius: 999, overflow: "hidden" }}>
+              {[["endToEnd", "End-to-end view"], ["role", "Role-based view"]].map(([id, l]) => (
+                <button key={id} onClick={() => selectMode(id)} style={{ cursor: "pointer", background: viewMode === id ? T.accent : T.panel, color: viewMode === id ? "#ffffff" : T.sub, border: "none", padding: "7px 13px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>{l}</button>
+              ))}
+            </span>
+            {viewMode === "role" && (
+              <select value={selectedRole} onChange={(e) => selectRole(e.target.value)} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 999, padding: "7px 12px", color: T.ink, fontSize: 11.5, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none" }}>
+                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            )}
           </div>
-          {lowCarbon && <span style={{ marginLeft: "auto" }}><Chip color={T.ok}>🌿 Low-carbon strategy active</Chip></span>}
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-          {TABS.map((t) => {
-            const on = tab === t.id;
+          {visibleTabs.map((t) => {
+            const on = activeTab === t.id;
             return (
               <button key={t.id} onClick={() => setTab(t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", background: on ? T.accent : T.panel, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 10, padding: "9px 15px", fontSize: 12.5, fontWeight: 700, fontFamily: SANS }}>
                 <t.icon size={14} /> {t.label}
@@ -3427,14 +4093,15 @@ export default function App() {
             );
           })}
         </div>
-        {tab === "financial" && <BudgetPage st={st} fw={fw} />}
-        {tab === "co2" && <CO2Page fw={fw} />}
-        {tab === "market" && <MarketFrameworkPage st={st} />}
-        {tab === "collection" && <CollectionFrameworkPage st={st} />}
-        {tab === "product" && <ProductManagerPage st={st} />}
-        {tab === "gtm" && <GTMPage st={st} />}
-        {tab === "itfas" && <ProductionPage st={st} />}
-        {tab === "monitoring" && <MonitoringPage fw={fw} />}
+        {activeTab === "ontology" && <OntologyPage st={st} ontology={ontology} setOntology={setOntology} />}
+        {activeTab === "financial" && <BudgetPage st={st} fw={fw} />}
+        {activeTab === "co2" && <CO2Page fw={fw} />}
+        {activeTab === "market" && <MarketFrameworkPage st={st} />}
+        {activeTab === "collection" && <CollectionFrameworkPage st={st} />}
+        {activeTab === "product" && <ProductManagerPage st={st} />}
+        {activeTab === "gtm" && <GTMPage st={st} />}
+        {activeTab === "itfas" && <ProductionPage st={st} />}
+        {activeTab === "monitoring" && <MonitoringPage key={viewMode + selectedRole} fw={fw} views={roleMon ? roleMon.views : ["financial", "co2"]} initial={roleMon ? roleMon.initial : "financial"} />}
       </div>
     </div>
   );
