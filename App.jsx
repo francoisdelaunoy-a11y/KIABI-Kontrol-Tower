@@ -1155,6 +1155,30 @@ function CollectionFrameworkPage({ st }) {
   );
 }
 
+/* Single Framework tab (end-to-end view): one sub-tab per framing category */
+const FW_SUBS = [{ id: "financial", label: "Financial", icon: Scale }, { id: "co2", label: "CO₂", icon: Leaf }, { id: "market", label: "Market", icon: Crown }, { id: "collection", label: "Collection", icon: LayoutGrid }];
+const FRAMEWORK_IDS = FW_SUBS.map((s) => s.id);
+function FrameworkPage({ st, fw, sub, setSub }) {
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        {FW_SUBS.map((t) => {
+          const on = sub === t.id;
+          return (
+            <button key={t.id} onClick={() => setSub(t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: on ? T.human : T.panel2, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 999, padding: "8px 15px", fontSize: 12, fontWeight: 700, fontFamily: SANS }}>
+              <t.icon size={13} /> {t.label}
+            </button>
+          );
+        })}
+      </div>
+      {sub === "financial" && <BudgetPage st={st} fw={fw} />}
+      {sub === "co2" && <CO2Page fw={fw} />}
+      {sub === "market" && <MarketFrameworkPage st={st} />}
+      {sub === "collection" && <CollectionFrameworkPage st={st} />}
+    </div>
+  );
+}
+
 function ProductManagerPage({ st }) {
   return (
     <div>
@@ -3931,21 +3955,28 @@ const ROLE_VIEWS = {
 /* Revenue committed by the Baby offer (M€) — compared with the Group envelope rule */
 const REVENUE_COMMITTED = 43.8;
 const ROLES = Object.keys(ROLE_VIEWS);
-const APP_TABS = [
-  { id: "ontology", label: "Ontology", icon: Database },
-  { id: "financial", label: "Financial Framework", icon: Scale },
-  { id: "co2", label: "CO₂ Framework", icon: Leaf },
-  { id: "market", label: "Market Framework", icon: Crown },
-  { id: "collection", label: "Collection Framework", icon: LayoutGrid },
-  { id: "product", label: "Product Manager", icon: Baby },
-  { id: "gtm", label: "Go to Market", icon: ShoppingBag },
-  { id: "itfas", label: "KFI", icon: Factory },
-  { id: "monitoring", label: "Monitoring", icon: TrendingUp },
-];
-const allowedTabs = (mode, role) => (mode === "role" ? ROLE_VIEWS[role].tabs : APP_TABS.map((t) => t.id));
+const TAB_DEFS = {
+  ontology: { label: "Ontology", icon: Database },
+  framework: { label: "Framework", icon: Scale },
+  financial: { label: "Financial Framework", icon: Scale },
+  co2: { label: "CO₂ Framework", icon: Leaf },
+  market: { label: "Market Framework", icon: Crown },
+  collection: { label: "Collection Framework", icon: LayoutGrid },
+  product: { label: "Product Manager", icon: Baby },
+  itfas: { label: "KFI", icon: Factory },
+  monitoring: { label: "Monitoring", icon: TrendingUp },
+};
+/* End-to-end order: the four framing pages live as sub-tabs of the single Framework tab */
+const E2E_TABS = ["ontology", "framework", "product", "itfas", "monitoring"];
+const allowedTabs = (mode, role) => (mode === "role" ? ROLE_VIEWS[role].tabs : E2E_TABS);
+/* A framework page id (financial, co2, market, collection) maps to the Framework tab in the end-to-end view */
+const tabKey = (mode, id) => (mode === "endToEnd" && FRAMEWORK_IDS.includes(id) ? "framework" : id);
 
 export default function App() {
   const [tab, setTab] = useState("ontology");
+  const [lastSub, setLastSub] = useState("financial");
+  /* every navigation goes through go(): a framework page id also becomes the remembered Framework sub-tab */
+  const go = (id) => { if (FRAMEWORK_IDS.includes(id)) setLastSub(id); setTab(id); };
   const [viewMode, setViewMode] = useState("endToEnd");
   const [selectedRole, setSelectedRole] = useState("Financial Leader");
   const [ontology, setOntology] = useState(ONTOLOGY_INITIAL);
@@ -4052,14 +4083,16 @@ export default function App() {
     snapshotOf: (id) => snapshots[id],
     reopen: (id) => { const sn = snapshots[id]; if (sn) { setAgentId(sn.agentId); setTerritoire(sn.territoire); setZone(sn.zone); setColIdx(sn.colIdx); setLevers(new Set(sn.levers)); setPvcMap((m) => ({ ...m, [id]: sn.pvi })); setVolMap((m) => ({ ...m, [id]: sn.volume })); setScenMap((m) => ({ ...m, [id]: sn.scenId })); } setReopened((r) => new Set(r).add(id)); setNote(""); },
     setSheet: (id, info) => setSheets((m) => ({ ...m, [id]: info })),
-    marketBrief, setMarketBrief, setTab,
+    marketBrief, setMarketBrief, setTab: go,
   };
   const fw = { budgetGlob, setBudgetGlob, budgetDepts, setBudgetDepts, co2Glob, setCo2Glob, co2Depts, setCo2Depts };
 
-  /* Visible tabs: every tab end-to-end, only the role's tabs in role view; the active tab can never be a hidden one */
-  const visibleTabs = useMemo(() => APP_TABS.filter((t) => allowedTabs(viewMode, selectedRole).includes(t.id)), [viewMode, selectedRole]);
-  const activeTab = visibleTabs.some((t) => t.id === tab) ? tab : visibleTabs[0].id;
-  const selectMode = (m) => { setViewMode(m); const a = allowedTabs(m, selectedRole); if (!a.includes(tab)) setTab(a[0]); };
+  /* Visible tabs: the end-to-end list or only the role's tabs in role view; the active tab can never be a hidden one */
+  const visibleTabs = useMemo(() => allowedTabs(viewMode, selectedRole).map((id) => ({ id, ...TAB_DEFS[id] })), [viewMode, selectedRole]);
+  const tabId = tabKey(viewMode, tab);
+  const activeTab = visibleTabs.some((t) => t.id === tabId) ? tabId : visibleTabs[0].id;
+  const frameworkSub = FRAMEWORK_IDS.includes(tab) ? tab : lastSub;
+  const selectMode = (m) => { setViewMode(m); const a = allowedTabs(m, selectedRole); if (!a.includes(tabKey(m, tab))) setTab(a[0] === "framework" ? lastSub : a[0]); };
   const selectRole = (r) => { setSelectedRole(r); const a = allowedTabs("role", r); if (!a.includes(tab)) setTab(a[0]); };
   const roleMon = viewMode === "role" ? ROLE_VIEWS[selectedRole].monitoring : null;
 
@@ -4087,19 +4120,19 @@ export default function App() {
           {visibleTabs.map((t) => {
             const on = activeTab === t.id;
             return (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", background: on ? T.accent : T.panel, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 10, padding: "9px 15px", fontSize: 12.5, fontWeight: 700, fontFamily: SANS }}>
+              <button key={t.id} onClick={() => go(t.id === "framework" ? frameworkSub : t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", background: on ? T.accent : T.panel, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 10, padding: "9px 15px", fontSize: 12.5, fontWeight: 700, fontFamily: SANS }}>
                 <t.icon size={14} /> {t.label}
               </button>
             );
           })}
         </div>
         {activeTab === "ontology" && <OntologyPage st={st} ontology={ontology} setOntology={setOntology} />}
+        {activeTab === "framework" && <FrameworkPage st={st} fw={fw} sub={frameworkSub} setSub={go} />}
         {activeTab === "financial" && <BudgetPage st={st} fw={fw} />}
         {activeTab === "co2" && <CO2Page fw={fw} />}
         {activeTab === "market" && <MarketFrameworkPage st={st} />}
         {activeTab === "collection" && <CollectionFrameworkPage st={st} />}
         {activeTab === "product" && <ProductManagerPage st={st} />}
-        {activeTab === "gtm" && <GTMPage st={st} />}
         {activeTab === "itfas" && <ProductionPage st={st} />}
         {activeTab === "monitoring" && <MonitoringPage key={viewMode + selectedRole} fw={fw} views={roleMon ? roleMon.views : ["financial", "co2"]} initial={roleMon ? roleMon.initial : "financial"} />}
       </div>
