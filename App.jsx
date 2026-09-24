@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { Layers, Target, Leaf, Check, Wallet, TrendingUp, Tag, Boxes, GitBranch, Globe2, Factory, ClipboardList, Sparkles, ShoppingBag, Truck, Send, RotateCcw, X, Heart, Star, ArrowRight, Baby, FileText, Box, BadgeCheck, MessageCircle, Wrench, Scale, Users, Palette, SpellCheck, Network, UserCog, Crown, Mic, Play, Database, Building2, Handshake, Award, ShieldCheck, TrendingDown, LayoutGrid, Triangle } from "lucide-react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { Layers, Target, Leaf, Check, Wallet, TrendingUp, Tag, Boxes, GitBranch, Globe2, Factory, ClipboardList, Sparkles, ShoppingBag, Truck, Send, RotateCcw, X, Heart, Star, ArrowRight, Baby, FileText, Box, BadgeCheck, MessageCircle, Wrench, Scale, Users, Palette, Network, UserCog, Crown, Mic, Play, Database, Building2, Handshake, Award, ShieldCheck, TrendingDown, LayoutGrid, Triangle, ChevronDown } from "lucide-react";
 
 /* ============================================================
    Theme (white background · Kiabi blues)
@@ -51,25 +51,25 @@ const PRODUITS_BASE = [
 /* Balance axes: [product-type focus, pyramid tier] */
 const AXES = {
   p1: ["Essentials", "Basics"],
-  p2: ["Impulse picks", "Seasonal"],
+  p2: ["Coup de cœur", "Seasonal"],
   p3: ["Essentials", "Permanent"],
-  p4: ["Signature pieces", "Seasonal"],
+  p4: ["Coup de cœur", "Seasonal"],
   p5: ["Essentials", "Basics"],
   p6: ["Best seller", "Permanent"],
   p7: ["Essentials", "Permanent"],
   p8: ["Best seller", "Permanent"],
-  p9: ["Signature pieces", "Top"],
+  p9: ["Coup de cœur", "Top"],
   p10: ["Collab", "Top"],
   p11: ["Collab", "Seasonal"],
   p12: ["Collab", "Top"],
 };
 const PRODUITS = PRODUITS_BASE.map((p) => ({ ...p, focus: AXES[p.id][0], pyramide: AXES[p.id][1] }));
 
+/* Product type targets stay mutually consistent: the minima add up to 74 % and the maxima to 106 %, so 100 % can be reached within every range */
 const FOCUS_DEF = [
   { n: "Essentials", c: "#0053A0", target: "30 – 40 %", min: 30, max: 40, role: "core of the offer, permanently available" },
   { n: "Best seller", c: "#4B90CD", target: "22 – 30 %", min: 22, max: 30, role: "volume and traffic drivers" },
-  { n: "Impulse picks", c: "#7fae9e", target: "15 – 22 %", min: 15, max: 22, role: "impulse buys, department animation" },
-  { n: "Signature pieces", c: "#c98a5b", target: "8 – 14 %", min: 8, max: 14, role: "differentiating pieces, brand signature" },
+  { n: "Coup de cœur", c: "#c98a5b", target: "12 – 20 %", min: 12, max: 20, role: "fashion favourites, emotional animation of the offer" },
   { n: "Collab", c: "#b0527a", target: "10 – 16 %", min: 10, max: 16, role: "licences and partnerships" },
 ];
 const PYRAMIDE_DEF = [
@@ -89,28 +89,78 @@ const buildDistrib = (key, defs) => {
   });
 };
 
-const AGENTS = [
-  { id: "petitprix", name: "Low-price offer", icon: Tag, color: "#0053A0", desc: "Maximum accessibility: floor PVI and smart packs for every family." },
-  { id: "essentiel", name: "Everyday essentials", icon: Layers, color: "#4B90CD", desc: "Must-have layette basics: bodysuits, sleepsuits, permanent availability." },
-  { id: "confort", name: "Comfort & softness", icon: Heart, color: "#0053A0", desc: "Certified soft materials, flat seams, baby's well-being first." },
-  { id: "licences", name: "Licences & characters", icon: Star, color: "#4B90CD", desc: "Disney, Marvel and favourite heroes: differentiation and impulse buying." },
-  { id: "specialiste", name: "Specialist offer", icon: Target, color: "#7fa3c4", desc: "Childcare expertise: grow-with-me fits, easy openings, dedicated know-how." },
-  { id: "bascarbone", name: "Low carbon", icon: Leaf, color: "#3fb27f", desc: "Minimised footprint: recycled materials, nearshore sourcing and lean processes." },
+/* Offer agents: two groups built on the collection pyramid and the product type — one active agent per group.
+   Name, target and role come from PYRAMIDE_DEF and FOCUS_DEF (single source). */
+const agentOf = (defs, n, id, icon, desc) => { const d = defs.find((x) => x.n === n); return { id, name: d.n, icon, color: d.c, target: d.target, role: d.role, desc }; };
+const AGENT_GROUPS = [
+  { id: "pyramid", title: "Pyramid agents", short: "Pyramid", icon: Triangle, hint: "optimise one tier of the collection pyramid", agents: [
+    agentOf(PYRAMIDE_DEF, "Permanent", "permanent", Layers, "Secures never-out-of-stock depth: continuous replenishment, stable colourways and the lowest cost per piece on the base of the offer."),
+    agentOf(PYRAMIDE_DEF, "Basics", "basics", RotateCcw, "Maximises carry-over from one season to the next: reuses proven patterns and fabrics, limits new development cost and risk."),
+    agentOf(PYRAMIDE_DEF, "Seasonal", "seasonal", Sparkles, "Paces the season: dated drops, fresh prints and colours, depth sized to sell through before the markdown period."),
+    agentOf(PYRAMIDE_DEF, "Top", "top", Crown, "Builds image at the top of the range: premium finishes, shallow depth, kept under the 12 % ceiling to limit markdown."),
+  ] },
+  { id: "type", title: "Product type agents", short: "Product type", icon: LayoutGrid, hint: "optimise the role of the product in the offer", agents: [
+    agentOf(FOCUS_DEF, "Essentials", "essentials", Boxes, "Protects availability of the core offer: permanent sizes and colours, sharp entry prices and smart multi-packs."),
+    agentOf(FOCUS_DEF, "Best seller", "bestseller", TrendingUp, "Maximises volume and traffic: pushes depth and reorders on proven sellers, holds the key price points."),
+    agentOf(FOCUS_DEF, "Coup de cœur", "coupdecoeur", Heart, "Drives the emotional animation of the offer: fashion favourites, prints and details that trigger the purchase."),
+    agentOf(FOCUS_DEF, "Collab", "collab", Star, "Optimises licences and partnerships: Disney and Marvel capsules within the Collab share, royalties included in the margin."),
+  ] },
 ];
-const AMELIO = [
-  { id: "prix", name: "Cost price agent", icon: Wallet, color: "#0053A0", levers: [
-    { id: "neg", t: "Cotton material renegotiation", effect: "−0,18 € /pc", d: { rev: -0.18 } },
-    { id: "lot", t: "Purchase lot optimisation", effect: "−0,09 € /pc", d: { rev: -0.09 } },
-  ]},
-  { id: "co2", name: "CO₂ agent", icon: Leaf, color: "#3fb27f", levers: [
-    { id: "rec", t: "30 % recycled cotton", effect: "−0,3 kg /pc", d: { co2: -0.3 } },
-    { id: "mer", t: "Slow sea freight", effect: "−0,2 kg /pc", d: { co2: -0.2 } },
-  ]},
-  { id: "appro", name: "Supply agent", icon: Truck, color: "#4B90CD", levers: [
-    { id: "pha", t: "Early material phasing", effect: "−6 d lead time", d: { lead: -6 } },
-    { id: "dbl", t: "Dual sourcing", effect: "−1,5 pt stock-out", d: { rup: -1.5 } },
-  ]},
-];
+const agentApplies = (target, p) => target === SEGMENTS[0] || target === p.segment;
+
+/* Material criteria per colourway reference — relative coefficients (default material = 1).
+   cost = fabric price index, co2 = garment-level footprint index (fibre + processing). */
+const MATERIALS = {
+  "Cotton": { cost: 1.0, co2: 1.0 },
+  "US cotton": { cost: 1.06, co2: 0.97 },
+  "Organic cotton": { cost: 1.22, co2: 0.86 },
+  "BCI cotton": { cost: 1.02, co2: 0.96 },
+  "Recycled cotton": { cost: 1.08, co2: 0.74 },
+  "Recycled polyester": { cost: 0.94, co2: 0.82 },
+  "Recycled polyamide": { cost: 1.2, co2: 0.95 },
+  "PES": { cost: 0.86, co2: 1.12 },
+  "Polyamide": { cost: 1.12, co2: 1.3 },
+  "Viscose": { cost: 0.97, co2: 1.06 },
+  "Lyocell": { cost: 1.16, co2: 0.9 },
+  "Tencel": { cost: 1.26, co2: 0.88 },
+  "Linen": { cost: 1.38, co2: 0.84 },
+};
+const RECYCLED = ["Recycled cotton", "Recycled polyester", "Recycled polyamide"];
+/* A certification only applies to the materials it can certify (fits); otherwise it has no effect */
+const CERTIFICATIONS = {
+  "OEKO-TEX": { cost: 1.0, co2: 1.0, fits: null },
+  "GRS": { cost: 1.04, co2: 0.98, fits: RECYCLED },
+  "OCS": { cost: 1.05, co2: 1.0, fits: ["Organic cotton"] },
+  "GOTS": { cost: 1.12, co2: 0.96, fits: ["Organic cotton"] },
+  "RCS": { cost: 1.02, co2: 1.0, fits: RECYCLED },
+};
+const FABRIC_WEIGHTS = [160, 190, 230, 260, 290, 300];
+/* Fabric weight (g/m²): fabric is ~55 % of the cost price and ~75 % of the footprint, both proportional to the mass */
+const weightIdx = (w, share) => 1 + share * (w / 190 - 1);
+/* Default criteria of each collection structure, read from its composition */
+const MATERIAL_DEFAULTS = { p1: ["Cotton", 230], p2: ["Cotton", 290], p3: ["Cotton", 190], p4: ["Cotton", 160], p5: ["PES", 230], p6: ["Cotton", 190], p7: ["Cotton", 160], p8: ["Cotton", 190], p9: ["Cotton", 190], p10: ["Cotton", 160], p11: ["Cotton", 160], p12: ["Cotton", 190] };
+const defaultMaterial = (p) => { const [material, weight] = MATERIAL_DEFAULTS[p.id] || ["Cotton", 190]; return { material, cert: "OEKO-TEX", weight }; };
+const certApplies = (m) => { const c = CERTIFICATIONS[m.cert]; return !c.fits || c.fits.includes(m.material); };
+const materialIdx = (m) => {
+  const mat = MATERIALS[m.material], cert = certApplies(m) ? CERTIFICATIONS[m.cert] : { cost: 1, co2: 1 };
+  return { cost: mat.cost * cert.cost * weightIdx(m.weight, 0.55), co2: mat.co2 * cert.co2 * weightIdx(m.weight, 0.75) };
+};
+/* Per colourway reference: cost price and footprint relative to the default criteria of the structure */
+const materialRefs = (p, list) => {
+  const base = materialIdx(defaultMaterial(p));
+  return list.map((m) => { const i = materialIdx(m); return { ...m, fCost: i.cost / base.cost, fCo2: i.co2 / base.co2, cost: +(p.revient * (i.cost / base.cost)).toFixed(2), co2: +(p.co2 * (i.co2 / base.co2)).toFixed(2), applies: certApplies(m) }; });
+};
+/* Structure level: the volume is split evenly across the colourway references, so the structure takes their average */
+const materialStructure = (p, list) => {
+  const refs = materialRefs(p, list);
+  const avg = (k) => refs.reduce((s, r) => s + r[k], 0) / (refs.length || 1);
+  return { refs, rev: +(p.revient * avg("fCost")).toFixed(2), co2: +(p.co2 * avg("fCo2")).toFixed(2) };
+};
+const materialSummary = (list) => {
+  const m = {};
+  list.forEach((x) => { const k = `${x.material} · ${x.cert} · ${x.weight} g`; m[k] = (m[k] || 0) + 1; });
+  return Object.entries(m).map(([k, n]) => (n > 1 ? `${k} (×${n})` : k)).join(" / ");
+};
 const ZONES = ["North zone", "South zone", "Maghreb zone", "Middle East zone", "Tropical zones"];
 const SEGMENTS = ["All collection structures", "Nightwear", "Underwear", "Licences"];
 const EXPERTS = {
@@ -131,13 +181,6 @@ const COLOR_MIX = [
   { n: "Blue", pct: 15, c: "#4B90CD" }, { n: "Sage green", pct: 13, c: "#7fae9e" },
   { n: "Camel", pct: 10, c: "#c98a5b" }, { n: "Multicolour", pct: 9, c: "#d9cce8" },
   { n: "Black", pct: 6, c: "#2a2f36" },
-];
-const TEXTES = [
-  { txt: "my baby's cosy snack", prod: "Velour pyjamas", ok: true },
-  { txt: "petit ♥ d'amour", prod: "Pack of 2 Valentine's bodysuits", ok: true },
-  { txt: "MORE HUGS", prod: "Velour pyjamas with feet", ok: true },
-  { txt: "Sweet dreams my litle", prod: "Long-sleeved sleepsuit pyjamas", ok: false, fix: "“little” — spelling error detected, correction to be requested from the supplier" },
-  { txt: "POWH !", prod: "'Winnie' wrap-over sleepsuit", ok: false, fix: "artwork not compliant with the licence style guide — check with Disney" },
 ];
 const CANAUX = [
   { n: "Omnichannel", pct: 62, target: "≥ 60 %", okv: true },
@@ -276,24 +319,43 @@ function PageHeader({ title, desc, expert }) {
   );
 }
 
-function LowCarbonBanner({ st, context, prod }) {
-  if (!st.lowCarbon) return null;
-  const lc = prod.scenarios.find((s) => s.id === "px");
+/* ============================================================
+   Collapsible section — every section of every tab opens closed:
+   only its title is visible until clicked. The content stays mounted
+   while hidden, so steps and inputs keep their state.
+   ============================================================ */
+function CollapsibleSection({ title, icon: Icon, iconColor = T.accent, lead, sub, right, accent, nested = false, children, style }) {
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((o) => !o);
+  const box = nested
+    ? { background: T.panel2, border: `1px solid ${accent ? `${accent}66` : T.line}`, borderRadius: 11, padding: open ? 14 : "11px 14px", marginTop: 16 }
+    : { background: T.panel, border: `1px solid ${accent ? `${accent}66` : T.lineSoft}`, borderRadius: 14, padding: open ? 18 : "14px 18px", marginBottom: 18, boxShadow: "0 1px 4px rgba(0,83,160,.06)" };
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 11, background: `${T.ok}14`, border: `1px solid ${T.ok}66`, borderRadius: 12, padding: "12px 15px", marginBottom: 16 }}>
-      <div style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: `${T.ok}1c`, border: `1px solid ${T.ok}55`, display: "grid", placeItems: "center" }}><Leaf size={16} color={T.ok} /></div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>“Low carbon” strategy active on the Baby offer</span>
-          <Chip color={T.ok}>Low carbon offer agent</Chip>
+    <section style={{ ...box, ...style }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div role="button" tabIndex={0} aria-expanded={open} onClick={toggle} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none", outline: "none", minWidth: 0, flex: open ? "0 1 auto" : "1 1 auto" }}>
+          <ChevronDown size={16} color={T.faint} style={{ flexShrink: 0, transition: "transform .15s", transform: open ? "none" : "rotate(-90deg)" }} />
+          {lead}
+          {Icon && <Icon size={15} color={iconColor} style={{ flexShrink: 0 }} />}
+          <span style={{ fontSize: nested ? 12.5 : 13.5, fontWeight: 800, color: T.ink }}>{title}</span>
         </div>
-        <div style={{ fontSize: 12, color: T.sub, lineHeight: 1.5, marginTop: 3 }}>
-          {context === "gtm"
-            ? <>The arbitration favours the most local sourcing: scenario “{lc.name}” ({lc.mix}) prioritised · footprint brought down to <span style={{ fontFamily: MONO }}>{st.co2Of(prod)} kg/pc</span>.</>
-            : <>The supply recommendation is biased towards the most local scenario “{lc.name}” · landed cost <span style={{ fontFamily: MONO }}>{eur(lc.cost)}/pc</span> · priority {lc.maitrise}.</>}
-        </div>
+        {open && sub && <span style={{ fontSize: 11.5, color: T.faint }}>{sub}</span>}
+        {open && right}
       </div>
-    </div>
+      <div style={{ display: open ? "block" : "none", marginTop: 14 }}>{children}</div>
+    </section>
+  );
+}
+
+/* Number field that can be cleared while typing: an empty field on blur gives the value back to the calculation */
+function KpiInput({ value, onCommit, step = 0.01, disabled, width = "100%" }) {
+  const [draft, setDraft] = useState(null);
+  return (
+    <input type="number" size={6} step={step} min={0} disabled={disabled} value={draft ?? String(value)}
+      onFocus={() => setDraft(String(value))}
+      onChange={(e) => { const v = e.target.value; setDraft(v); if (v !== "" && !Number.isNaN(+v)) onCommit(+v); }}
+      onBlur={() => { if (draft === "") onCommit(null); setDraft(null); }}
+      style={{ width, minWidth: 0, flex: "1 1 auto", boxSizing: "border-box", background: disabled ? T.panel2 : T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "6px 8px", fontFamily: MONO, fontSize: 15, fontWeight: 600, color: T.ink, outline: "none", cursor: disabled ? "not-allowed" : "text" }} />
   );
 }
 
@@ -317,7 +379,6 @@ const dateKey = (d) => d.split("-").reverse().join("");
 
 function ChefPage({ st }) {
   const [sortK, setSortK] = useState("implantation");
-  const [target, setTarget] = useState(SEGMENTS[0]);
   const sorted = useMemo(() => {
     const arr = [...PRODUITS];
     arr.sort((a, b) => {
@@ -329,28 +390,45 @@ function ChefPage({ st }) {
     return arr;
   }, [sortK, st]);
   const sel = st.sel;
-  const agent = AGENTS.find((a) => a.id === st.agentId);
-  const agentApplies = agent && (target === SEGMENTS[0] || target === sel.segment);
-  const reco = st.recoFor(sel);
-  const marge = Math.round(((st.pvcOf(sel) - st.revOf(sel)) / st.pvcOf(sel)) * 100);
+  const k = st.kpisOf(sel);
   /* Approved offers are frozen: every displayed choice comes from the approval snapshot and controls are disabled */
   const locked = st.isLocked(sel.id);
   const snap = locked ? st.snapshotOf(sel.id) : null;
-  const vAgent = locked ? snap.agentId : st.agentId;
+  const vAgents = locked ? snap.agentIds : st.agentIds;
+  const vTargets = locked ? snap.agentTargets : st.agentTargets;
   const vTerr = locked ? snap.territoire : st.territoire;
   const vZone = locked ? snap.zone : st.zone;
   const vCol = locked ? snap.colIdx : st.colIdx;
-  const vLevers = locked ? new Set(snap.levers) : st.levers;
-  const shownAgent = locked ? AGENTS.find((a) => a.id === snap.agentId) || null : agentApplies ? agent : null;
+  const vEdits = locked ? snap.edits : k.edited;
+  const mat = materialStructure(sel, locked ? snap.materials : st.materialsOf(sel));
+  /* Agent applied to the selected structure, per group: the active agent of the group if its target segment covers the structure */
+  const appliedAgent = (g) => {
+    const id = locked ? snap.agentApplied[g.id] : agentApplies(vTargets[g.id], sel) ? vAgents[g.id] : null;
+    return g.agents.find((a) => a.id === id) || null;
+  };
   const lockStyle = locked ? { opacity: 0.55, cursor: "not-allowed" } : {};
+  const selSt = { background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 7, padding: "4px 8px", color: T.ink, fontSize: 11, fontFamily: SANS, fontWeight: 700, cursor: locked ? "not-allowed" : "pointer", outline: "none" };
+  const matSel = { ...selSt, width: "100%", minWidth: 110, fontSize: 11.5, padding: "5px 7px" };
+  const matTd = { padding: "7px 9px", borderBottom: `1px solid ${T.lineSoft}`, verticalAlign: "top" };
+  const delta = (f, good) => {
+    const d = (f - 1) * 100;
+    if (Math.abs(d) < 0.05) return <span style={{ fontSize: 10, color: T.faint }}>base</span>;
+    const up = d > 0;
+    return <span style={{ fontSize: 10, color: up === good ? T.ok : T.warn }}>{up ? "+" : "−"}{fr1(Math.abs(d))} %</span>;
+  };
+  const kpiRows = [
+    { f: "pvi", label: "PVI", unit: "€", step: 0.1, icon: Tag, color: T.accent, val: locked ? snap.pvi : k.pvi, calc: k.computed.pvi, src: "catalogue price", fmt: eur, rule: <RuleStatus st={st} area="Supply" kpi="price" /> },
+    { f: "rev", label: "Cost price", unit: "€", step: 0.01, icon: Wallet, color: T.blue, val: locked ? snap.revient : k.rev, calc: k.computed.rev, src: "from the material criteria", fmt: eur, rule: <RuleStatus st={st} area="Supply" kpi="margin" /> },
+    { f: "marge", label: "Margin", unit: "%", step: 1, icon: TrendingUp, color: T.human, val: locked ? snap.marge : k.marge, calc: k.computed.marge, src: "auto from PVI and cost price", fmt: (v) => `${v} %`, rule: <RuleStatus st={st} area="Supply" kpi="margin" /> },
+    { f: "co2", label: "CO₂ weight / piece", unit: "kg", step: 0.01, icon: Leaf, color: T.ok, val: locked ? snap.co2 : k.co2, calc: k.computed.co2, src: "from the material criteria", fmt: (v) => `${fr2(v)} kg`, rule: <RuleStatus st={st} area="Offer & Collection" kpi="footprint" productId={sel.id} /> },
+    { f: "lead", label: "Supply lead time", unit: "d", step: 1, icon: Truck, color: T.silver, val: locked ? snap.lead : k.lead, calc: k.computed.lead, src: "from the sourcing scenario", fmt: (v) => `${v} d`, rule: <RuleStatus st={st} area="Supply" kpi="sourcing" action={false} /> },
+    { f: "vol", label: "Volume", unit: "units", step: 1000, icon: Boxes, color: T.silver, val: locked ? snap.volume : k.vol, calc: k.computed.vol, src: "collection plan", fmt: (v) => `${u(v)} units`, rule: <RuleStatus st={st} area="Go to Market" kpi="volume" /> },
+  ];
 
   return (
     <div>
       {/* ---- Product manager cockpit ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-          <Baby size={16} color={T.accent} /><span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>Product manager cockpit — Baby Offer</span>
-        </div>
+      <CollapsibleSection title="Product manager cockpit — Baby Offer" icon={Baby}>
         <span style={microLbl}>Budget status</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <PMGauge icon={Wallet} label="Revenue budget" used={43.8} total={st.perfRules.caEnvelope} unit="M€" fmt={(n) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} color={T.accent} rule={<RuleStatus st={st} area="Offer & Collection" kpi="revenue" label="Group rule" action={false} />} />
@@ -364,40 +442,35 @@ function ChefPage({ st }) {
           <PMGauge icon={Layers} label="Number of colourway references" used={500} total={600} unit="colourway refs" fmt={(n) => u(n)} color={T.human} />
           <PMGauge icon={GitBranch} label="Quantities per colourway reference" used={20000} total={24000} unit="p" fmt={(n) => u(n)} color={T.silver} />
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* ---- Approved offer: frozen summary (read only) ---- */}
       {locked && (
-        <div style={{ background: T.panel, border: `1px solid ${T.ok}66`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-            <BadgeCheck size={16} color={T.ok} /><span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>{snap.name}</span>
+        <CollapsibleSection title={`Approved offer — ${snap.name}`} icon={BadgeCheck} iconColor={T.ok} accent={T.ok}
+          right={<>
             <Chip color={T.ok}>Approved - read only</Chip>
             <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>approved on {snap.at.toLocaleDateString("fr-FR")} at {snap.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
             <button onClick={() => st.reopen(sel.id)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, fontFamily: SANS }}><Wrench size={13} /> Edit offer again</button>
-          </div>
+          </>}>
           <div style={{ fontSize: 11.5, color: T.sub, marginBottom: 10, lineHeight: 1.5 }}>All choices are frozen as they were at approval. Selecting the offer does not unlock it: only “Edit offer again” reopens editing and restores these choices.</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 8 }}>
-            {[["Collection structure", snap.name], ["Segment", snap.segment], ["PVI", eur(snap.pvi)], ["Volume", `${u(snap.volume)} units`], ["Territory / zone", snap.territoire === "Specific" ? `Specific · ${snap.zone || "no zone"}` : "Core"], ["Offer agent", snap.agentName || "none"], ["Sourcing scenario", snap.scenName], ["Colourway", snap.coloris || "—"], ["Improvement levers", snap.leverNames.length ? snap.leverNames.join(" · ") : "none"], ["Product sheet", snap.sheet ? `${snap.sheet.filled} / ${snap.sheet.total} fields${snap.sheet.codif ? ` · ${snap.sheet.codif}` : ""}${snap.sheet.written ? " · written to PLM" : ""}` : "not generated"]].map(([l, v]) => (
+            {[["Collection structure", snap.name], ["Segment", snap.segment], ["PVI", eur(snap.pvi)], ["Volume", `${u(snap.volume)} units`], ["Territory / zone", snap.territoire === "Specific" ? `Specific · ${snap.zone || "no zone"}` : "Core"], ...AGENT_GROUPS.map((g) => [`${g.short} agent`, (appliedAgent(g) || {}).name || "none"]), ["Sourcing scenario", snap.scenName], ["Colourway", snap.coloris || "—"], ["Material criteria", materialSummary(snap.materials)], ["Product sheet", snap.sheet ? `${snap.sheet.filled} / ${snap.sheet.total} fields${snap.sheet.codif ? ` · ${snap.sheet.codif}` : ""}${snap.sheet.written ? " · written to PLM" : ""}` : "not generated"]].map(([l, v]) => (
               <div key={l} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "8px 11px" }}>
                 <div style={{ fontSize: 10, color: T.faint, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5 }}>{l}</div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginTop: 3, lineHeight: 1.4 }}>{v}</div>
               </div>
             ))}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
       {/* ---- Offer structuring ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <ClipboardList size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Offer structuring — Offer status</span>
-          <span style={{ fontSize: 11, color: T.faint }}>click a collection structure to see the applied agent and break it down into products</span>
-          <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.faint, fontFamily: MONO }}>Sort by:
-            <select value={sortK} onChange={(e) => setSortK(e.target.value)} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 7, padding: "4px 8px", color: T.ink, fontSize: 11, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none" }}>
-              {SORT_FIELDS.map((f) => <option key={f.k} value={f.k}>{f.label}</option>)}
-            </select>
-          </span>
-        </div>
+      <CollapsibleSection title="Offer structuring — Offer status" icon={ClipboardList} sub="click a collection structure to see the applied agents and break it down into products"
+        right={<span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.faint, fontFamily: MONO }}>Sort by:
+          <select value={sortK} onChange={(e) => setSortK(e.target.value)} style={{ ...selSt, cursor: "pointer" }}>
+            {SORT_FIELDS.map((f) => <option key={f.k} value={f.k}>{f.label}</option>)}
+          </select>
+        </span>}>
         <div style={{ maxHeight: 330, overflowY: "auto", overflowX: "auto", border: `1px solid ${T.lineSoft}`, borderRadius: 10 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead><tr>
@@ -432,29 +505,39 @@ function ChefPage({ st }) {
         </div>
         <div style={{ marginTop: 8, fontSize: 11, color: T.faint, fontFamily: MONO }}>{sorted.length} collection structures in the Baby collection · scroll to see all</div>
 
-        <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-          <Sparkles size={15} color={T.human} /><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>Offer agents — only one active at a time</span>
-          <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.faint, fontFamily: MONO }}>Apply to:
-            <select value={target} disabled={locked} onChange={(e) => setTarget(e.target.value)} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 7, padding: "4px 8px", color: T.ink, fontSize: 11, fontFamily: SANS, fontWeight: 700, cursor: "pointer", outline: "none" }}>
-              {SEGMENTS.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </span>
+        <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <Sparkles size={15} color={T.human} /><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>Offer agents — one active agent per group</span>
+          <span style={{ fontSize: 11, color: T.faint }}>built on the collection pyramid and the product type</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(215px,1fr))", gap: 10 }}>
-          {AGENTS.map((a) => {
-            const on = vAgent === a.id;
-            return (
-              <button key={a.id} disabled={locked} onClick={() => !locked && st.setAgentId(on ? null : a.id)} style={{ textAlign: "left", cursor: "pointer", background: on ? `${a.color}12` : T.panel2, border: `1px solid ${on ? a.color : T.line}`, borderRadius: 11, padding: "11px 12px", ...lockStyle }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 26, height: 26, borderRadius: 7, display: "grid", placeItems: "center", background: `${a.color}1c`, border: `1px solid ${a.color}55` }}><a.icon size={14} color={a.color} /></span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{a.name}</span>
-                  {on && <Check size={14} color={a.color} style={{ marginLeft: "auto" }} />}
-                </div>
-                <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6, lineHeight: 1.45 }}>{a.desc}</div>
-              </button>
-            );
-          })}
-        </div>
+        {AGENT_GROUPS.map((g) => (
+          <div key={g.id} style={{ marginTop: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              <g.icon size={13} color={T.accent} /><span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{g.title}</span>
+              <span style={{ fontSize: 11, color: T.faint }}>{g.hint}</span>
+              <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.faint, fontFamily: MONO }}>Apply to:
+                <select value={vTargets[g.id]} disabled={locked} onChange={(e) => st.setAgentTarget(g.id, e.target.value)} style={selSt}>
+                  {SEGMENTS.map((s) => <option key={s}>{s}</option>)}
+                </select>
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(215px,1fr))", gap: 10 }}>
+              {g.agents.map((a) => {
+                const on = vAgents[g.id] === a.id;
+                return (
+                  <button key={a.id} disabled={locked} onClick={() => !locked && st.setAgent(g.id, on ? null : a.id)} style={{ textAlign: "left", cursor: "pointer", background: on ? `${a.color}12` : T.panel2, border: `1px solid ${on ? a.color : T.line}`, borderRadius: 11, padding: "11px 12px", fontFamily: SANS, ...lockStyle }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ width: 26, height: 26, borderRadius: 7, flexShrink: 0, display: "grid", placeItems: "center", background: `${a.color}1c`, border: `1px solid ${a.color}55` }}><a.icon size={14} color={a.color} /></span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{a.name}</span>
+                      {on && <Check size={14} color={a.color} style={{ marginLeft: "auto" }} />}
+                    </div>
+                    <div style={{ fontSize: 10, fontFamily: MONO, color: T.sub, marginTop: 6 }}>target {a.target} · {a.role}</div>
+                    <div style={{ fontSize: 10.5, color: T.faint, marginTop: 4, lineHeight: 1.45 }}>{a.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
 
         <div style={{ marginTop: 14, background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 11, padding: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
@@ -495,19 +578,23 @@ function ChefPage({ st }) {
         </div>
 
         <div style={{ marginTop: 12, padding: "11px 13px", background: T.panel, border: `1px solid ${T.accent}55`, borderRadius: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, color: T.ink }}>Agent applied to <strong>“{sel.name}”</strong>:</span>
-          {shownAgent ? <Chip color={shownAgent.color}>{shownAgent.name}</Chip> : <span style={{ fontSize: 11.5, color: T.faint }}>no active agent on this segment</span>}
+          <span style={{ fontSize: 12, color: T.ink }}>Agents applied to <strong>“{sel.name}”</strong>:</span>
+          {AGENT_GROUPS.map((g) => {
+            const a = appliedAgent(g);
+            return (
+              <span key={g.id} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>{g.short}</span>
+                {a ? <Chip color={a.color}>{a.name}</Chip> : <span style={{ fontSize: 11.5, color: T.faint }}>no active agent on this segment</span>}
+              </span>
+            );
+          })}
           {locked && <Chip color={T.ok}>Approved - read only</Chip>}
           <span style={{ marginLeft: "auto", fontSize: 11, color: T.faint, fontFamily: MONO }}>→ broken down into {sel.coloris.length} colourway refs in “Work in progress”</span>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* ---- Work in progress ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-          <Layers size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Work in progress</span>
-          <span style={{ fontSize: 11.5, color: T.faint }}>colourway breakdown of the selected collection structure</span>
-        </div>
+      <CollapsibleSection title="Work in progress" icon={Layers} sub="colourway breakdown of the selected collection structure" right={locked ? <Chip color={T.ok}>Approved - read only</Chip> : null}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
           <span style={{ width: 40, height: 40, borderRadius: 10, display: "grid", placeItems: "center", fontSize: 20, background: `${sel.color}33`, border: `1px solid ${sel.color}88` }}>{sel.img}</span>
           <div>
@@ -527,64 +614,88 @@ function ChefPage({ st }) {
             );
           })}
         </div>
-        <span style={microLbl}>Collection structure indicators</span>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {[
-            { label: "PVI", val: eur(locked ? snap.pvi : st.pvcOf(sel)), icon: Tag, color: T.accent, rule: <RuleStatus st={st} area="Supply" kpi="price" /> },
-            { label: "Cost price", val: eur(locked ? snap.revient : st.revOf(sel)), icon: Wallet, color: T.blue, rule: <RuleStatus st={st} area="Supply" kpi="margin" /> },
-            { label: "Margin", val: (locked ? snap.marge : marge) + " %", icon: TrendingUp, color: T.human, rule: <RuleStatus st={st} area="Supply" kpi="margin" /> },
-            { label: "CO₂ weight / piece", val: (locked ? snap.co2 : st.co2Of(sel)) + " kg", icon: Leaf, color: T.ok, rule: <RuleStatus st={st} area="Offer & Collection" kpi="footprint" productId={sel.id} /> },
-            { label: "Supply lead time", val: (locked ? snap.lead : st.leadOf(reco)) + " d", icon: Truck, color: T.silver, rule: <RuleStatus st={st} area="Supply" kpi="sourcing" action={false} /> },
-            { label: "Volume", val: u(locked ? snap.volume : st.volOf(sel)) + " units", icon: Boxes, color: T.silver, rule: <RuleStatus st={st} area="Go to Market" kpi="volume" /> },
-          ].map((s) => (
-            <div key={s.label} style={{ flex: "1 1 130px", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 13px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, color: T.sub, fontSize: 11, fontWeight: 600 }}><s.icon size={13} color={s.color} />{s.label}</div>
-              <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 600, color: T.ink, marginTop: 5 }}>{s.val}</div>
-              {s.rule && <div style={{ marginTop: 6 }}>{s.rule}</div>}
-            </div>
-          ))}
-        </div>
-      </div>
 
-      {/* ---- Improvement agents ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <Wrench size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Improvement agents</span>
+        <span style={microLbl}>Material criteria per colourway reference — they drive the cost price and the CO₂ weight</span>
+        <div style={{ overflowX: "auto", border: `1px solid ${T.lineSoft}`, borderRadius: 10, marginBottom: 6 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead><tr>
+              {["Colourway reference", "Material", "Certification", "Fabric weight", "Cost price", "CO₂ / piece"].map((c, j) => (
+                <th key={c} style={{ textAlign: j >= 4 ? "right" : "left", padding: "7px 9px", fontSize: 10, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {sel.coloris.map(([n, c], i) => {
+                const r = mat.refs[i];
+                return (
+                  <tr key={n}>
+                    <td style={matTd}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, whiteSpace: "nowrap", marginTop: 4 }}>
+                        <span style={{ width: 12, height: 12, borderRadius: 99, background: c, border: `1px solid ${T.line}`, flexShrink: 0 }} />
+                        <span style={{ fontWeight: 700, color: T.ink }}>{n}</span>
+                        <span style={{ fontFamily: MONO, fontSize: 10, color: T.faint }}>{sel.id.toUpperCase()}-{String(i + 1).padStart(2, "0")}</span>
+                      </span>
+                    </td>
+                    <td style={matTd}>
+                      <select value={r.material} disabled={locked} onChange={(e) => st.setMaterial(sel.id, i, "material", e.target.value)} style={matSel}>
+                        {Object.keys(MATERIALS).map((m) => <option key={m}>{m}</option>)}
+                      </select>
+                    </td>
+                    <td style={matTd}>
+                      <select value={r.cert} disabled={locked} onChange={(e) => st.setMaterial(sel.id, i, "cert", e.target.value)} style={matSel}>
+                        {Object.keys(CERTIFICATIONS).map((m) => <option key={m}>{m}</option>)}
+                      </select>
+                      {!r.applies && <div style={{ fontSize: 10, color: T.warn, marginTop: 3, lineHeight: 1.35, maxWidth: 170 }}>{r.cert} does not certify {r.material.toLowerCase()} — no effect</div>}
+                    </td>
+                    <td style={matTd}>
+                      <select value={r.weight} disabled={locked} onChange={(e) => st.setMaterial(sel.id, i, "weight", +e.target.value)} style={matSel}>
+                        {FABRIC_WEIGHTS.map((w) => <option key={w} value={w}>{w} g/m²</option>)}
+                      </select>
+                    </td>
+                    <td style={{ ...matTd, textAlign: "right", fontFamily: MONO, whiteSpace: "nowrap" }}><div style={{ marginTop: 4, color: T.ink }}>{eur(r.cost)}</div>{delta(r.fCost, false)}</td>
+                    <td style={{ ...matTd, textAlign: "right", fontFamily: MONO, whiteSpace: "nowrap" }}><div style={{ marginTop: 4, color: T.ink }}>{fr2(r.co2)} kg</div>{delta(r.fCo2, false)}</td>
+                  </tr>
+                );
+              })}
+              <tr style={{ background: T.panel2 }}>
+                <td colSpan={4} style={{ padding: "8px 9px", fontSize: 10.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase", letterSpacing: 0.5 }}>Structure — average of the {sel.coloris.length} colourway refs (volume split evenly)</td>
+                <td style={{ padding: "8px 9px", textAlign: "right", fontFamily: MONO, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{eur(mat.rev)}</td>
+                <td style={{ padding: "8px 9px", textAlign: "right", fontFamily: MONO, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{fr2(mat.co2)} kg</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 12px" }}>Three agents scan the selected product and suggest levers to improve cost price, CO₂ impact and supply lead time. Toggle a lever on / off to see the simulated effect on the indicators above.</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 12 }}>
-          {AMELIO.map((ag) => (
-            <div key={ag.id} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <span style={{ width: 26, height: 26, borderRadius: 7, display: "grid", placeItems: "center", background: `${ag.color}1c`, border: `1px solid ${ag.color}55` }}><ag.icon size={14} color={ag.color} /></span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{ag.name}</span>
+        <div style={{ fontSize: 10.5, color: T.faint, lineHeight: 1.5, marginBottom: 16 }}>Organic cotton and GOTS raise the cost price; recycled materials lower the CO₂ weight; a heavier fabric raises both. Changing a criterion recalculates the cost price and the CO₂ weight below — they stay editable by hand afterwards.</div>
+
+        <span style={microLbl}>Collection structure indicators — editable by hand, a manual value overrides the calculation</span>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {kpiRows.map((s) => {
+            const manual = vEdits[s.f] != null;
+            return (
+              <div key={s.f} style={{ flex: "1 1 130px", minWidth: 0, background: T.panel2, border: `1px solid ${manual ? `${T.human}88` : T.line}`, borderRadius: 11, padding: "11px 13px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, color: T.sub, fontSize: 11, fontWeight: 600 }}>
+                  <s.icon size={13} color={s.color} />{s.label}
+                  {manual && <span style={{ marginLeft: "auto" }}><Chip color={T.human}>Manual</Chip></span>}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                  <KpiInput key={`${sel.id}-${s.f}-${locked}`} value={s.val} step={s.step} disabled={locked} onCommit={(v) => st.setKpi(sel.id, s.f, v)} />
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: T.faint }}>{s.unit}</span>
+                  {manual && !locked && (
+                    <button title="Back to the calculated value" onClick={() => st.setKpi(sel.id, s.f, null)} style={{ flexShrink: 0, cursor: "pointer", display: "grid", placeItems: "center", width: 24, height: 24, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 7, padding: 0 }}><RotateCcw size={11} color={T.faint} /></button>
+                  )}
+                </div>
+                <div style={{ fontSize: 10, fontFamily: MONO, color: T.faint, marginTop: 5, lineHeight: 1.4 }}>{locked ? "frozen at approval" : manual ? `manual · calculated ${s.fmt(s.calc)}` : s.src}</div>
+                {s.rule && <div style={{ marginTop: 6 }}>{s.rule}</div>}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {ag.levers.map((lv) => {
-                  const on = vLevers.has(lv.id);
-                  return (
-                    <button key={lv.id} disabled={locked} onClick={() => !locked && st.toggleLever(lv.id)} style={{ ...lockStyle, textAlign: "left", cursor: locked ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 9, background: on ? `${ag.color}12` : T.panel, border: `1px solid ${on ? ag.color : T.line}`, borderRadius: 9, padding: "8px 10px" }}>
-                      <span style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0, display: "grid", placeItems: "center", background: on ? ag.color : "transparent", border: `1.5px solid ${on ? ag.color : T.faint}` }}>{on && <Check size={11} color="#ffffff" />}</span>
-                      <span style={{ flex: 1, fontSize: 11.5, fontWeight: 600, color: T.ink }}>{lv.t}</span>
-                      <span style={{ fontFamily: MONO, fontSize: 10.5, color: ag.color, whiteSpace: "nowrap" }}>{lv.effect}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* ---- Product sheet assistant: at the end of the product brief, a voice note generates the sheet ---- */}
       <ProductSheetAssistant st={st} locked={locked} />
 
       {/* ---- Product development validation ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <BadgeCheck size={15} color={T.ok} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Product development validation</span>
-          <Chip color={T.accent}>{sel.name}</Chip>
-        </div>
+      <CollapsibleSection title="Product development validation" icon={BadgeCheck} iconColor={T.ok} right={<Chip color={T.accent}>{sel.name}</Chip>}>
         <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 12px" }}>The product manager approves or rejects the development of the selected collection structure. Approval publishes the deliverables to the PLM.</p>
         {!st.approved.has(sel.id) || st.isReopened(sel.id) ? (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -625,7 +736,7 @@ function ChefPage({ st }) {
             {st.note && <div style={{ marginTop: 10, fontSize: 11.5, fontFamily: MONO, color: T.sub }}>{st.note}</div>}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }
@@ -646,10 +757,6 @@ const OPTI = {
   couleurs: [
     { id: "c1", t: "Push sage green onto 2 additional colourway variants", sim: [["Sage green", "13 %", "18 %"], ["Ecru / beige", "30 %", "27 %"], ["S1 2027 fashion objective", "not met", "met"]] },
     { id: "c2", t: "Cap black at 5 % (transfer to camel)", sim: [["Black", "6 %", "5 %"], ["Camel", "10 %", "11 %"], ["Margin vs black threshold", "2 pts", "3 pts"]] },
-  ],
-  ortho: [
-    { id: "o1", t: "Fix “litle” → “little” before production launch", sim: [["Infographic anomalies", "2", "1"], ["Correction cost", "—", "0 € (before prod)"], ["Shelf withdrawal risk", "high", "averted"]] },
-    { id: "o2", t: "Submit “POWH !” to the Disney licence guide", sim: [["Infographic anomalies", "2", "0"], ["Licence validation lead time", "—", "+5 d"], ["Licence compliance", "80 %", "100 %"]] },
   ],
   canaux: [
     { id: "k1", t: "Open 3 Core structures to the South & Maghreb zones", sim: [["International", "30 %", "36 %"], ["Objective ≥ 35 %", "not met", "met"], ["Export volume", "—", "+180 000 pcs"]] },
@@ -807,11 +914,10 @@ function DirectricePage({ st }) {
 
   const checks = [
     { id: "pyramide", icon: Triangle, title: "Collection pyramid", verdict: verdictOf(pyrRows), msg: "The Top accounts for 15,0 % of volume (575 000 pcs across 6 colourway refs) against a 12 % ceiling. The Permanent base (47,6 %) and Basics (15,2 %) are within their targets: the adjustment concerns the Top only, where the end-of-season markdown risk is highest." },
-    { id: "focus", icon: LayoutGrid, title: "Product type focus", verdict: verdictOf(focusRows), msg: "Impulse picks account for only 10,7 % of volume (410 000 pcs across 3 colourway refs) against a 15 – 22 % target, while Essentials climb to 37,7 %. The offer lacks animation products against a very broad base." },
+    { id: "focus", icon: LayoutGrid, title: "Product type focus", verdict: verdictOf(focusRows), msg: "Coup de cœur climbs to 23,3 % of volume (895 000 pcs across 8 colourway refs) against a 12 – 20 % target, carried by the 410 000-piece velour pyjamas. Essentials (37,7 %), Best seller (25,1 %) and Collab (13,9 %) are within their targets: trim the Coup de cœur depth to limit the end-of-season markdown risk." },
     { id: "prix", icon: Scale, title: "Price coherence", verdict: "Alert", msg: "Over-density at the 9,00 € PVI (5 structures out of 12). Recommendation: smooth part of the offer towards the 7 – 8 € price points to restore the 4 → 15 € price ladder." },
     { id: "personas", icon: Users, title: "Target split", verdict: "Alert", msg: "The current customer slightly exceeds its target (above 40 %). Rebalance in favour of the trendy customer on the next store launches." },
     { id: "couleurs", icon: Palette, title: "Colour balance", verdict: "Compliant", msg: "Black at 6 % — below the 8 % threshold. S1 2027 fashion colour “Sage green” at 13 %: to push towards 18 % (season objective)." },
-    { id: "ortho", icon: SpellCheck, title: "Garment text infographics", verdict: "To fix", msg: "2 anomalies detected across 5 checked texts — corrections to request before production launch." },
     { id: "canaux", icon: Network, title: "Channel & geography split", verdict: "Alert", msg: "International at 30 % vs ≥ 35 % objective. Strengthen the export-eligible Core structures in the South and Maghreb zones." },
   ];
   const ck = (id) => checks.find((c) => c.id === id);
@@ -821,10 +927,7 @@ function DirectricePage({ st }) {
       <MarketBriefEditor st={st} />
 
       {/* ---- Collection director cockpit ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-          <Crown size={16} color={T.accent} /><span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>Market manager cockpit — Kids collection S1 2027</span>
-        </div>
+      <CollapsibleSection title="Market manager cockpit — Kids collection S1 2027" icon={Crown}>
         <span style={microLbl}>Collection budget status</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <PMGauge icon={Wallet} label="Collection revenue budget" used={131.4} total={st.perfRules.caEnvelope * 3} unit="M€" fmt={(n) => n.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} color={T.accent} rule={<RuleStatus st={st} area="Offer & Collection" kpi="revenue" label="Group rule" action={false} />} />
@@ -852,15 +955,12 @@ function DirectricePage({ st }) {
             </div>
           ))}
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* ---- Collection balance agent ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          <Scale size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Collection balance agent</span>
-          <button onClick={() => setRan(true)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 8, padding: "6px 13px", fontSize: 11.5, fontWeight: 800, fontFamily: SANS }}><Sparkles size={13} /> Re-run analysis</button>
-        </div>
-        <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 14px" }}>The agent scans the whole collection and checks the balance of the offer: collection pyramid, product type focus, price coherence, target split, colours, garment text infographics and channel split. Each control proposes optimisation scenarios, simulates their impact and forwards the change request to the product manager.</p>
+      <CollapsibleSection title="Collection balance agent" icon={Scale}
+        right={<button onClick={() => setRan(true)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 8, padding: "6px 13px", fontSize: 11.5, fontWeight: 800, fontFamily: SANS }}><Sparkles size={13} /> Re-run analysis</button>}>
+        <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 14px" }}>The agent scans the whole collection and checks the balance of the offer: collection pyramid, product type focus, price coherence, target split, colours and channel split. Each control proposes optimisation scenarios, simulates their impact and forwards the change request to the product manager.</p>
 
         {ran && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -933,26 +1033,7 @@ function DirectricePage({ st }) {
               <BalanceActions ck="couleurs" />
             </div>
 
-            {/* 4. Spelling */}
-            <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><SpellCheck size={14} color={T.accent} /><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>Garment text infographics</span><VerdictChip v="To fix" /></div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 8 }}>
-                {TEXTES.map((t) => (
-                  <div key={t.txt} style={{ display: "flex", alignItems: "flex-start", gap: 9, background: T.panel, border: `1px solid ${t.ok ? T.line : T.bad + "66"}`, borderRadius: 9, padding: "8px 11px" }}>
-                    {t.ok ? <Check size={14} color={T.ok} style={{ flexShrink: 0, marginTop: 1 }} /> : <X size={14} color={T.bad} style={{ flexShrink: 0, marginTop: 1 }} />}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: T.ink, fontStyle: "italic" }}>“{t.txt}”</span>
-                      <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}> — {t.prod}</span>
-                      {!t.ok && <div style={{ fontSize: 11, color: T.bad, marginTop: 3 }}>{t.fix}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>{ck("ortho").msg}</div>
-              <BalanceActions ck="ortho" />
-            </div>
-
-            {/* 5. Channels */}
+            {/* 4. Channels */}
             <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><Network size={14} color={T.accent} /><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>Channel & geography split</span><VerdictChip v="Alert" /></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
@@ -971,7 +1052,7 @@ function DirectricePage({ st }) {
             </div>
           </div>
         )}
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }
@@ -983,7 +1064,7 @@ const catOf = (n) => { const s = n.toLowerCase(); if (s.includes("bod")) return 
 
 /* ============================================================
    Market brief — written in Market Framework, copied read-only to
-   Collection Framework and Product Manager (local simulation, no network)
+   Product Manager (local simulation, no network)
    ============================================================ */
 const STYLE3D_NAME = "Style3D"; /* transcribed as "Steel 3D" in the voice brief — most likely Style3D; adjust here if needed */
 const MARKET_SOURCES = [
@@ -996,13 +1077,13 @@ const BRIEF_THEMES = [
   { re: /comfort|soft|cosy|cozy|gentle/i, theme: "Comfort & softness", guidance: "prioritise soft certified materials, flat seams and easy-dressing openings" },
   { re: /price|value|affordab|cheap|budget|accessib/i, theme: "Price accessibility", guidance: "hold the 4 → 15 € price ladder and smart packs on essentials" },
   { re: /carbon|recycl|sustain|eco|planet|footprint/i, theme: "Low-carbon offer", guidance: "recycled cotton and nearshore sourcing on the highest-volume structures" },
-  { re: /licen|character|disney|marvel|hero/i, theme: "Licences & characters", guidance: "keep licences as impulse picks within the 10 – 16 % collab share" },
+  { re: /licen|character|disney|marvel|hero/i, theme: "Licences & characters", guidance: "keep licences as an animation within the 10 – 16 % Collab share" },
   { re: /colou?r|pastel|sage|palette|tone/i, theme: "Colour direction", guidance: "push the S1 2027 fashion colour towards 18 % of the colour mix" },
   { re: /international|export|zone|maghreb|south|tropic/i, theme: "International reach", guidance: "open export-eligible Core structures to the South and Maghreb zones" },
   { re: /essential|basic|permanent|bodysuit|sleepsuit|nightwear|underwear/i, theme: "Essentials base", guidance: "secure permanent bodysuit packs and nightwear availability all season" },
-  { re: /trend|fashion|novelty|capsule|impulse|animation/i, theme: "Fashion animation", guidance: "add impulse picks to reach the 15 – 22 % animation share" },
+  { re: /trend|fashion|novelty|capsule|impulse|animation|favourite|coup de c/i, theme: "Fashion animation", guidance: "keep Coup de cœur pieces within their 12 – 20 % animation share" },
 ];
-const SAMPLE_MARKET_INTENTION = "For S1 2027 the Baby market must stay the most accessible layette offer on the market: hold the 4 → 15 € price ladder, secure permanent bodysuit packs and nightwear every week of the season, and bring comfort and softness to every essential. We push a low-carbon direction on the biggest volumes with recycled cotton and nearshore sourcing. Colour direction: sage green and ecru as the season signature. Licences remain an impulse animation, not the base. Open the export-eligible Core structures to the South and Maghreb zones.";
+const SAMPLE_MARKET_INTENTION = "For S1 2027 the Baby market must stay the most accessible layette offer on the market: hold the 4 → 15 € price ladder, secure permanent bodysuit packs and nightwear every week of the season, and bring comfort and softness to every essential. We push a low-carbon direction on the biggest volumes with recycled cotton and nearshore sourcing. Colour direction: sage green and ecru as the season signature. Licences remain an animation of the offer, not the base. Open the export-eligible Core structures to the South and Maghreb zones.";
 /* Pure local synthesis: structured brief derived from the written intention and the selected (simulated) sources */
 function synthesizeMarketBrief(text, sourceIds) {
   const clean = text.trim().replace(/\s+/g, " ");
@@ -1030,13 +1111,9 @@ function MarketBriefEditor({ st }) {
   const run = () => { const ids = MARKET_SOURCES.map((s) => s.id).filter((id) => sources.has(id)); st.setMarketBrief({ text: draft, sourceIds: ids, sourceNames: MARKET_SOURCES.filter((s) => ids.includes(s.id)).map((s) => s.name), summary: synthesizeMarketBrief(draft, ids), at: new Date() }); };
   const dirty = brief && brief.text !== draft;
   return (
-    <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-        <span style={{ width: 26, height: 26, borderRadius: 99, display: "grid", placeItems: "center", background: T.accent, color: "#ffffff", fontFamily: MONO, fontSize: 12, fontWeight: 800 }}>1</span>
-        <span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>Write the market brief</span>
-        <span style={{ fontSize: 11.5, color: T.faint }}>shared orientation for the whole market, then for the collections and the products</span>
-        {brief && <span style={{ marginLeft: "auto" }}><Chip color={dirty ? T.warn : T.ok}>{dirty ? "Edited since last synthesis" : "Brief synthesized"}</Chip></span>}
-      </div>
+    <CollapsibleSection title="Write the market brief" lead={<span style={{ width: 22, height: 22, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: T.accent, color: "#ffffff", fontFamily: MONO, fontSize: 11, fontWeight: 800 }}>1</span>}
+      sub="shared orientation for the whole market, then for the collections and the products"
+      right={brief ? <span style={{ marginLeft: "auto" }}><Chip color={dirty ? T.warn : T.ok}>{dirty ? "Edited since last synthesis" : "Brief synthesized"}</Chip></span> : null}>
       <span style={microLbl}>Trend data connectors — simulated sources, no network call</span>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 14 }}>
         {MARKET_SOURCES.map((s) => {
@@ -1065,40 +1142,26 @@ function MarketBriefEditor({ st }) {
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: `${T.ok}14`, border: `1px solid ${T.ok}66`, borderRadius: 11, padding: "11px 14px", marginBottom: 12, flexWrap: "wrap" }}>
             <BadgeCheck size={16} color={T.ok} style={{ flexShrink: 0, marginTop: 1 }} />
             <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: T.ink, lineHeight: 1.5 }}>
-              <strong>Market brief synthesized on {brief.at.toLocaleDateString("fr-FR")} at {brief.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong> — available to Collection Framework and Product Manager as a read-only copy. It stays editable here only.
+              <strong>Market brief synthesized on {brief.at.toLocaleDateString("fr-FR")} at {brief.at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong> — available to Product Manager as a read-only copy. It stays editable here only.
             </div>
             <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
-              <button onClick={() => st.setTab("collection")} style={{ cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>Collection Framework →</button>
               <button onClick={() => st.setTab("product")} style={{ cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>Product Manager →</button>
             </span>
           </div>
           <MarketBriefCard st={st} origin={false} />
         </div>
       )}
-    </div>
+    </CollapsibleSection>
   );
 }
 
-/* Read-only copy of the market brief (Collection Framework and Product Manager), with its provenance */
+/* Read-only copy of the market brief (Product Manager), with its provenance; origin = false is the synthesis shown in the editor */
 function MarketBriefCard({ st, origin = true }) {
   const b = st.marketBrief;
-  if (!b) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: T.panel2, border: `1px dashed ${T.line}`, borderRadius: 12, padding: "12px 14px", marginBottom: 18 }}>
-        <FileText size={15} color={T.faint} />
-        <span style={{ fontSize: 12, color: T.sub, flex: "1 1 240px" }}>No market brief yet — the Market Manager writes and synthesizes it in Market Framework.</span>
-        <button onClick={() => st.setTab("market")} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>Go to Market Framework <ArrowRight size={12} /></button>
-      </div>
-    );
-  }
-  const s = b.summary;
-  return (
-    <div style={{ background: origin ? T.panel : T.panel2, border: `1px solid ${origin ? `${T.accent}44` : T.line}`, borderRadius: 12, padding: "14px 16px", marginBottom: origin ? 18 : 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <Crown size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Market brief</span>
-        {origin ? <Chip color={T.accent}>Read-only copy · from Market Framework</Chip> : <Chip color={T.ok}>Synthesis</Chip>}
-        <span style={{ marginLeft: "auto", fontSize: 10.5, fontFamily: MONO, color: T.faint }}>{b.at.toLocaleDateString("fr-FR")} · {b.sourceNames.join(", ")}</span>
-      </div>
+  const s = b ? b.summary : null;
+  const stamp = b ? <span style={{ marginLeft: "auto", fontSize: 10.5, fontFamily: MONO, color: T.faint }}>{b.at.toLocaleDateString("fr-FR")} · {b.sourceNames.join(", ")}</span> : null;
+  const body = s && (
+    <>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.45, marginBottom: 10 }}>{s.headline}.</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }}>
         <div>
@@ -1120,13 +1183,41 @@ function MarketBriefCard({ st, origin = true }) {
           ))}
         </div>
       </div>
-      {origin && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 10 }}>Editable from Market Framework only · {u(s.words)} words in the source intention.</div>}
+    </>
+  );
+  if (origin) {
+    return (
+      <CollapsibleSection title="Market brief" icon={Crown} accent={b ? T.accent : null} right={b ? <><Chip color={T.accent}>Read-only copy · from Market Framework</Chip>{stamp}</> : null}>
+        {b ? (
+          <>
+            {body}
+            <div style={{ fontSize: 10.5, color: T.faint, marginTop: 10 }}>Editable from Market Framework only · {u(s.words)} words in the source intention.</div>
+          </>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: T.panel2, border: `1px dashed ${T.line}`, borderRadius: 12, padding: "12px 14px" }}>
+            <FileText size={15} color={T.faint} />
+            <span style={{ fontSize: 12, color: T.sub, flex: "1 1 240px" }}>No market brief yet — the Market Manager writes and synthesizes it in Market Framework.</span>
+            <button onClick={() => st.setTab("market")} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: T.panel, color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "6px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>Go to Market Framework <ArrowRight size={12} /></button>
+          </div>
+        )}
+      </CollapsibleSection>
+    );
+  }
+  if (!b) return null;
+  return (
+    <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 12, padding: "14px 16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <Crown size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Market brief</span>
+        <Chip color={T.ok}>Synthesis</Chip>
+        {stamp}
+      </div>
+      {body}
     </div>
   );
 }
 
 /* ============================================================
-   Market Framework (Market Manager) · Collection Framework (empty state) · Product Manager
+   Market Framework (Market Manager) · Product Manager
    ============================================================ */
 function MarketFrameworkPage({ st }) {
   return (
@@ -1138,30 +1229,8 @@ function MarketFrameworkPage({ st }) {
   );
 }
 
-function CollectionFrameworkPage({ st }) {
-  return (
-    <div>
-      <PageHeader title="Collection Framework" desc="Collection-level framing built from the market brief, confronted with the needs submitted by each country's stores." expert={{ role: "Business decision-maker", txt: "The collection framework translates the market brief into guidelines per collection structure and checks them against the store submissions." }} />
-      <span style={microLbl}>Market brief received from Market Framework</span>
-      <MarketBriefCard st={st} />
-      <StoreSubmissionsBlock />
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 22, marginBottom: 18, textAlign: "center" }}>
-        <span style={{ width: 44, height: 44, borderRadius: 12, display: "inline-grid", placeItems: "center", background: `${T.accent}12`, border: `1px solid ${T.accent}44`, marginBottom: 10 }}><LayoutGrid size={20} color={T.accent} /></span>
-        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Collection guidelines not built yet</div>
-        <div style={{ fontSize: 12, color: T.sub, marginTop: 4, lineHeight: 1.5 }}>The guidelines per collection structure will be derived from the market brief and the store submissions above.</div>
-        <div style={{ display: "inline-block", textAlign: "left", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", marginTop: 14 }}>
-          <span style={microLbl}>Coming next</span>
-          {["Collection guidelines derived from the market brief", "Framing per collection structure, shared with the product managers", "Hand-off to the Product Manager offer structuring"].map((t) => (
-            <div key={t} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: T.sub, lineHeight: 1.45, marginBottom: 4 }}><ArrowRight size={12} color={T.faint} style={{ flexShrink: 0, marginTop: 3 }} />{t}</div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* Single Framework tab (end-to-end view): one sub-tab per framing category */
-const FW_SUBS = [{ id: "financial", label: "Financial", icon: Scale }, { id: "co2", label: "CO₂", icon: Leaf }, { id: "market", label: "Market", icon: Crown }, { id: "collection", label: "Collection", icon: LayoutGrid }];
+const FW_SUBS = [{ id: "financial", label: "Financial", icon: Scale }, { id: "co2", label: "CO₂", icon: Leaf }, { id: "market", label: "Market", icon: Crown }];
 const FRAMEWORK_IDS = FW_SUBS.map((s) => s.id);
 function FrameworkPage({ st, fw, sub, setSub }) {
   return (
@@ -1179,7 +1248,6 @@ function FrameworkPage({ st, fw, sub, setSub }) {
       {sub === "financial" && <BudgetPage st={st} fw={fw} />}
       {sub === "co2" && <CO2Page fw={fw} />}
       {sub === "market" && <MarketFrameworkPage st={st} />}
-      {sub === "collection" && <CollectionFrameworkPage st={st} />}
     </div>
   );
 }
@@ -1252,15 +1320,14 @@ function ProductSheetAssistant({ st, locked }) {
   const dis = (on) => ({ opacity: locked ? 0.5 : 1, cursor: locked ? "not-allowed" : on ? "pointer" : "default" });
 
   return (
-    <div>
+    <CollapsibleSection title="Product sheet from a voice note" icon={Mic}
+      right={<>
+        <Chip color={T.accent}>{sel.name}</Chip>
+        {locked && <Chip color={T.ok}>Approved - read only</Chip>}
+        <button onClick={reset} disabled={locked} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS, ...dis(true) }}><RotateCcw size={12} /> Start over</button>
+      </>}>
       {/* ---- Voice note ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          <Mic size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Product sheet from a voice note</span>
-          <Chip color={T.accent}>{sel.name}</Chip>
-          {locked && <Chip color={T.ok}>Approved - read only</Chip>}
-          <button onClick={reset} disabled={locked} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS, ...dis(true) }}><RotateCcw size={12} /> Start over</button>
-        </div>
+      <div>
         <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 12px" }}>At the end of the product brief, a voice note from the Product Manager is enough to generate the product sheet: the agent extracts the referencing details from the note, asks for the missing fields, then writes the sheet to the PLM — one continuous journey, no separate tab.</p>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 11, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px" }}>
           <button onClick={() => !locked && setPlayed(true)} disabled={locked} style={{ width: 36, height: 36, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: T.accent, border: "none", ...dis(true) }}><Play size={16} color="#ffffff" /></button>
@@ -1277,7 +1344,7 @@ function ProductSheetAssistant({ st, locked }) {
       </div>
 
       {analyzed && (
-        <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+        <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, marginTop: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
             <ClipboardList size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>PLM product sheet</span>
             <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.sub }}>{filled} / {REF_FIELDS.length} fields</span>
@@ -1301,7 +1368,7 @@ function ProductSheetAssistant({ st, locked }) {
       )}
 
       {analyzed && current && (
-        <div style={{ background: T.panel, border: `1px solid ${T.human}55`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+        <div style={{ background: T.panel, border: `1px solid ${T.human}55`, borderRadius: 12, padding: 16, marginTop: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <MessageCircle size={15} color={T.human} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>The agent collects the missing details</span>
             <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.faint }}>{missing.length} question{missing.length > 1 ? "s" : ""} remaining</span>
@@ -1324,7 +1391,7 @@ function ProductSheetAssistant({ st, locked }) {
       )}
 
       {complete && (
-        <div style={{ background: T.panel, border: `1px solid ${T.ok}55`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
+        <div style={{ background: T.panel, border: `1px solid ${T.ok}55`, borderRadius: 12, padding: 16, marginTop: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
             <BadgeCheck size={15} color={T.ok} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Product sheet complete — ready for the PLM</span>
             <Chip color={T.ok}>{REF_FIELDS.length} / {REF_FIELDS.length} fields</Chip>
@@ -1346,7 +1413,7 @@ function ProductSheetAssistant({ st, locked }) {
           )}
         </div>
       )}
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -1361,13 +1428,13 @@ function GTMPage({ st }) {
   const answer = (q) => {
     const s = q.toLowerCase();
     if (/(recommand|recommend|conseil|advi|meilleur|best|optimal|choisir|choose|lequel|which|préconis|preconis|suggest)/.test(s))
-      return `${st.lowCarbon ? "Low-carbon strategy active → I favour local sourcing. " : ""}I recommend “${scen.name}”: ${eur(scen.cost)}/pc · ${st.leadOf(scen)} d · stock-out ${st.rupOf(scen)} %. ${scen.note}`;
+      return `I recommend “${scen.name}”: ${eur(scen.cost)}/pc · ${st.leadOf(scen)} d · stock-out ${st.rupOf(scen)} %. ${scen.note}`;
     if (/(prix|price|coût|cout|cost|revient)/.test(s))
       return sel.scenarios.map((x) => `${x.name}: ${eur(x.cost)}/pc`).join(" · ");
     if (/(délai|delai|lead|temps|time)/.test(s))
       return sel.scenarios.map((x) => `${x.name}: ${st.leadOf(x)} d`).join(" · ");
     if (/(co2|carbone|carbon|empreinte|footprint)/.test(s))
-      return `Current footprint: ${st.co2Of(sel)} kg/pc${st.lowCarbon ? " (reduced by the Low-carbon strategy)" : ""}. Nearshore sourcing sharply reduces transport.`;
+      return `Current footprint: ${st.co2Of(sel)} kg/pc. Nearshore sourcing sharply reduces transport.`;
     if (/(risque|risk|rupture|stock-out|stockout|alea|aléa)/.test(s))
       return sel.scenarios.map((x) => `${x.name}: stock-out ${st.rupOf(x)} %`).join(" · ");
     return `For “${sel.name}” (${u(st.volOf(sel))} units · PVI ${eur(st.pvcOf(sel))}), ask me for a recommendation, costs, lead times, the CO₂ footprint or the risks.`;
@@ -1377,7 +1444,6 @@ function GTMPage({ st }) {
   return (
     <div>
       <PageHeader title="Go to market" desc="Store launch brief, volume and selling price, then discussion with the supply agent." expert={EXPERTS.supply} />
-      <LowCarbonBanner st={st} context="gtm" prod={sel} />
 
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
@@ -1444,7 +1510,7 @@ function GTMPage({ st }) {
                 <button key={x.id} onClick={() => st.setScen(sel.id, x.id)} style={{ textAlign: "left", cursor: "pointer", background: chosen ? `${T.blue}12` : T.panel2, border: `1px solid ${chosen ? T.blue : T.line}`, borderRadius: 10, padding: "11px 13px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <Truck size={14} color={T.blue} /><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{x.name}</span>
-                    {isReco && <Chip color={st.lowCarbon ? T.ok : T.blue}>{st.lowCarbon ? "Low-carbon reco" : "Recommended"}</Chip>}
+                    {isReco && <Chip color={T.blue}>Recommended</Chip>}
                     {chosen && <Check size={14} color={T.blue} style={{ marginLeft: "auto" }} />}
                   </div>
                   <div style={{ fontSize: 11, color: T.sub, marginTop: 5, fontFamily: MONO }}>{eur(x.cost)}/pc · {st.leadOf(x)} d · stock-out {st.rupOf(x)} % · {x.splitProche}% nearshore · {x.usine}</div>
@@ -1493,7 +1559,6 @@ function ItfasPage({ st, embedded }) {
   return (
     <div>
       <PageHeader title="Supply" desc="Price validations transferred by Go to market — to be carried out by KFI." expert={EXPERTS.supply} />
-      <LowCarbonBanner st={st} context="supply" prod={sel || PRODUITS[0]} />
 
       <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -1535,7 +1600,7 @@ function ItfasPage({ st, embedded }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12, marginBottom: 14 }}>
             <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px" }}>
-              <div style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, textTransform: "uppercase", marginBottom: 6 }}>{st.lowCarbon ? "Recommended scenario (Low carbon)" : "Selected scenario"}</div>
+              <div style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, textTransform: "uppercase", marginBottom: 6 }}>Selected scenario</div>
               <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{scen.name}</div>
               <div style={{ fontSize: 11, color: T.sub, fontFamily: MONO, marginTop: 5 }}>{eur(scen.cost)}/pc · {st.leadOf(scen)} d · stock-out {st.rupOf(scen)} % · {scen.splitProche}% nearshore</div>
               <div style={{ fontSize: 10.5, color: T.faint, marginTop: 5 }}>{scen.usine} · focus: {scen.maitrise}</div>
@@ -1907,15 +1972,8 @@ function KfiReconciliation({ st }) {
   const nextBtn = { display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.accent, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS };
 
   return (
-    <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, marginBottom: 18, boxShadow: "0 1px 4px rgba(0,83,160,.06)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <span style={{ width: 34, height: 34, borderRadius: 9, display: "grid", placeItems: "center", background: `${T.accent}12`, border: `1px solid ${T.accent}44` }}><Handshake size={17} color={T.accent} /></span>
-        <div style={{ flex: "1 1 260px" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>Partner business plans × in-season forecasts</div>
-          <div style={{ fontSize: 11.5, color: T.faint }}>The long industrial cycle (commitments, purchasing policy, CSR trajectories) confronted with the short commercial cycle (S1 2027 forecasts and orders received from RELEX).</div>
-        </div>
-        <VensoTag txt="Venso reconciliation" />
-      </div>
+    <CollapsibleSection title="Partner business plans × in-season forecasts" icon={Handshake} right={<VensoTag txt="Venso reconciliation" />}>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>The long industrial cycle (commitments, purchasing policy, CSR trajectories) confronted with the short commercial cycle (S1 2027 forecasts and orders received from RELEX).</div>
 
       {/* Permanent synthesis banner */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 13px", marginBottom: 10 }}>
@@ -1961,6 +2019,8 @@ function KfiReconciliation({ st }) {
         })}
       </div>
 
+      {/* ---- Current step: collapsible panel, the stepper above switches its content ---- */}
+      <CollapsibleSection nested title={`Step ${kfiStep} · ${KFI_STEPS[kfiStep - 1][0]}`} sub={KFI_STEPS[kfiStep - 1][1]} style={{ marginTop: 0 }}>
       {/* ---- Step 1: business plan & target panel ---- */}
       {kfiStep === 1 && (
         <div>
@@ -2286,7 +2346,1188 @@ function KfiReconciliation({ st }) {
           )}
         </div>
       )}
+      </CollapsibleSection>
+    </CollapsibleSection>
+  );
+}
+
+/* ============================================================
+   KFI — Supplier compliance: tailored audit grids (Quality Vision).
+   Quality audit = the Quality Vision mock-up taken as is (data, scoring, four stages);
+   the social, environmental and industrial audits run the same engine on their own data.
+   Everything is simulated; no supplier, figure, review or signal refers to a real partner.
+   ============================================================ */
+const QV_BLUE = "#0082C3";
+const QV_BLUE_DARK = "#005F8F";
+const QV_UNIFORM_TOTAL = 184;
+/* Tailwind slate scale of the mock-up, converted to inline styles */
+const QV_S = { 50: "#f8fafc", 100: "#f1f5f9", 200: "#e2e8f0", 300: "#cbd5e1", 400: "#94a3b8", 500: "#64748b", 600: "#475569", 800: "#1e293b", 900: "#0f172a" };
+const QV_FONT = "Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
+const QV_XS = { fontSize: 12, lineHeight: "16px" };
+const QV_SM = { fontSize: 14, lineHeight: "20px" };
+const QV_TAB = { fontVariantNumeric: "tabular-nums" };
+const QV_TRUNC = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const qvName = (id) => PRODUITS_BASE.find((p) => p.id === id).name;
+
+/* ---------------------------------------------------------------- Quality audit (mock-up data) */
+const QV_METHODS = {
+  lab: { label: "Lab test" },
+  inline: { label: "In-line measurement" },
+  doc: { label: "Document review" },
+  visit: { label: "Unannounced visit" },
+};
+
+const QV_FREQ = { frequent: 3, medium: 2, rare: 1 };
+const QV_SEV = { severe: 3, minor: 1 };
+
+const QV_COUNTRIES = {
+  Italy: { note: "Mature industrial base, short logistics loop, strong regulatory enforcement.", boosts: {} },
+  Portugal: { note: "Reliable textile and mold-making ecosystem, moderate audit coverage.", boosts: {} },
+  Vietnam: { note: "Fast-growing capacity, frequent subcontracting, variable lab equipment.", boosts: { subcontract: 0.3, visit: 0.2 } },
+  China: { note: "Deep supplier tiers, high subcontracting risk, uneven lab capability.", boosts: { subcontract: 0.4, visit: 0.25 } },
+  Bangladesh: { note: "Textile-dense, high subcontracting, limited in-house testing.", boosts: { subcontract: 0.5, visit: 0.35, lab: 0.3 } },
+};
+
+// Input 1 — history of costs of non-quality events (last three years)
+const QV_NQ_COST = {
+  low: {
+    label: "Low and stable — €18k / €16k / €19k, rework",
+    costs: [18, 16, 19], trend: "Stable", type: "In-plant rework",
+    score: 12, boosts: { process: 0.15 },
+    signal: "Non-quality costs are small and flat. The events stay inside the plant.",
+  },
+  spike: {
+    label: "One spike — €220k recall two years ago, then quiet",
+    costs: [220, 24, 20], trend: "Recovered", type: "Recall, then rework",
+    score: 40, boosts: { lab: 0.3, final: 0.2 },
+    signal: "One recall, then two quiet years. The root cause must be verified as closed.",
+  },
+  rising: {
+    label: "Rising — €42k / €95k / €160k, field returns",
+    costs: [42, 95, 160], trend: "Rising", type: "Field returns",
+    score: 68, boosts: { final: 0.4, lab: 0.4, inline: 0.3 },
+    signal: "Costs have quadrupled in three years and reach the customer. Escapes are not contained at final inspection.",
+  },
+  degrading: {
+    label: "Degrading — €60k / €140k / €310k, field returns and one recall",
+    costs: [60, 140, 310], trend: "Degrading", type: "Field returns and recall",
+    score: 88, boosts: { final: 0.5, lab: 0.5, inline: 0.4, process: 0.4 },
+    signal: "Costs have quintupled, with one recall. Non-quality is now the supplier's dominant cost signal.",
+  },
+  none: {
+    label: "No history — new supplier",
+    costs: [], trend: "Unknown", type: "None recorded",
+    score: 50, boosts: { doc: 0.3, visit: 0.3 },
+    signal: "No non-quality record exists. Absence of data is treated as risk, not as evidence.",
+  },
+};
+
+// Input 2 — standards already met
+const QV_ISO = {
+  certified: { label: "ISO 9001 certified", score: 15, boosts: {} },
+  expired: { label: "ISO 9001 expired", score: 55, boosts: { doc: 0.4, process: 0.2 } },
+  none: { label: "No ISO 9001", score: 80, boosts: { doc: 0.6, process: 0.3 } },
+};
+const QV_EXTRA_STANDARDS = {
+  iso14001: { label: "ISO 14001", relief: 5 },
+  iso45001: { label: "ISO 45001", relief: 5 },
+  oekotex: { label: "Oeko-Tex 100", relief: 10, families: ["textile"] },
+  bsci: { label: "amfori BSCI", relief: 5 },
+};
+
+// Input 3a — past KIABI quality audits (last three, scored /100)
+const QV_QUALITY_AUDITS = {
+  strong: { label: "Strong — 92 / 90 / 93", scores: [92, 90, 93], findings: ["None", "1 minor", "None"], score: 10, boosts: {}, signal: "Three consistent quality audits, no recurring finding." },
+  improving: { label: "Weak but improving — 68 / 74 / 80", scores: [68, 74, 80], findings: ["2 major", "1 major", "2 minor"], score: 40, boosts: { process: 0.3 }, signal: "Quality audits are recovering; the last major finding closed only one cycle ago." },
+  worsening: { label: "Worsening — 88 / 79 / 71", scores: [88, 79, 71], findings: ["None", "2 minor, process control", "1 major, final inspection"], score: 78, boosts: { process: 0.6, inline: 0.4, final: 0.5 }, signal: "Quality audit scores fall at each cycle and the last one carries a major finding on the final gate." },
+  none: { label: "None — new supplier", scores: [], findings: [], score: 55, boosts: { doc: 0.3, visit: 0.4 }, signal: "No KIABI quality audit on record." },
+};
+
+// Input 3b — past DPR audits (last three, pass / conditional / fail)
+const QV_DPR_AUDITS = {
+  compliant: { label: "Compliant — passed 3 of 3", results: ["Pass", "Pass", "Pass"], majors: [0, 0, 0], score: 10, boosts: {}, signal: "DPR audits passed three times, no major finding." },
+  conditional: { label: "Conditional — 1 major finding open", results: ["Pass", "Conditional", "Conditional"], majors: [0, 1, 1], score: 45, boosts: { doc: 0.3, process: 0.3 }, signal: "DPR conditional twice, the same major finding remains open." },
+  worsening: { label: "Worsening — pass, 2 majors, fail", results: ["Pass", "Conditional", "Fail"], majors: [0, 2, 3], score: 82, boosts: { process: 0.5, doc: 0.4, visit: 0.5, subcontract: 0.3 }, signal: "DPR degraded from pass to fail in three cycles; production requirements are no longer held." },
+  none: { label: "None — new supplier", results: [], majors: [], score: 55, boosts: { doc: 0.3, visit: 0.4 }, signal: "No DPR audit on record." },
+};
+
+// Score composition — weights are displayed to the user
+const QV_SCORE_WEIGHTS = { nq: 0.4, standards: 0.2, audits: 0.4 };
+
+// Each product: tech pack cards, review clusters, candidate checkpoint pool.
+// Checkpoint sources: tech (card ids), review (cluster ids), tags (supplier signal hooks).
+// Products are four Baby collection structures of the cockpit (PRODUITS_BASE).
+const QV_PRODUCTS = {
+  p2: {
+    name: qvName("p2"),
+    short: "Velour pyjamas",
+    family: "textile",
+    familyLabel: "Baby nightwear",
+    context: "Velour knit, cut and sew, front motif print, non-slip sole dots",
+    defaults: { country: "Portugal", nq: "degrading", iso: "certified", extras: ["iso14001", "iso45001", "oekotex", "bsci"], qa: "worsening", dpr: "worsening" },
+    techPack: [
+      { id: "mat", kind: "Material", text: "Velour 77% cotton, 23% polyester, 290 g/m², brushed face, rib cuffs", conf: 0.95 },
+      { id: "proc", kind: "Process", text: "Velour knitting and piece dyeing, cut and sew, front motif screen print, sole dots", conf: 0.91 },
+      { id: "snap", kind: "Critical characteristic", text: "Snap fastener pull-off above 90 N, no sharp edge", conf: 0.93 },
+      { id: "sole", kind: "Critical characteristic", text: "Non-slip sole dots, adhesion and slip resistance after 20 washes", conf: 0.88 },
+      { id: "pile", kind: "Critical characteristic", text: "Velour pile retention, pilling grade 3–4 after 20 washes", conf: 0.89 },
+      { id: "size", kind: "Critical characteristic", text: "Foot and body length within ±1 cm per size after washing", conf: 0.9 },
+      { id: "reg", kind: "Regulatory", text: "EN 14878 nightwear flammability, EN 14682 cords, REACH, OEKO-TEX class I for babies", conf: 0.97 },
+    ],
+    reviews: [
+      { id: "snaps", text: "Snaps pop open or come off", freq: "frequent", sev: "severe", maps: ["snap", "proc"], quote: "Two snaps came off in the first month — one ended up in the cot." },
+      { id: "shrink", text: "Shrinks and the feet get too short", freq: "medium", sev: "minor", maps: ["size", "mat"], quote: "After three washes the feet are too tight, we had to go up a size." },
+      { id: "slip", text: "Grip dots peel off the soles", freq: "rare", sev: "severe", maps: ["sole", "proc"], quote: "The grip dots flaked off and my toddler slipped on the kitchen floor." },
+      { id: "pills", text: "Velour pills and looks worn", freq: "medium", sev: "minor", maps: ["pile", "mat"], quote: "Lovely and soft at first, but bobbly all over after a few weeks." },
+    ],
+    pool: [
+      { id: "v1", label: "Snap pull-off test above 90 N, 10 garments per lot", method: "lab", base: 5, tech: ["snap"], review: ["snaps"], tags: ["lab", "final"] },
+      { id: "v2", label: "Snap setting press pressure and die wear logged per shift", method: "inline", base: 5, tech: ["snap", "proc"], review: ["snaps"], tags: ["process", "inline"] },
+      { id: "v3", label: "Velour weight and pile height checked on incoming rolls", method: "inline", base: 4, tech: ["pile", "mat"], review: ["pills"], tags: ["process", "inline"] },
+      { id: "v4", label: "Dimensional stability after 3 washes, foot and body ±1 cm", method: "lab", base: 4, tech: ["size"], review: ["shrink"], tags: ["lab", "final"] },
+      { id: "v5", label: "Sole dot adhesion and slip test after 20 washes", method: "lab", base: 4, tech: ["sole"], review: ["slip"], tags: ["lab", "final"] },
+      { id: "v6", label: "Sole dot curing temperature and dwell logged per lot", method: "inline", base: 4, tech: ["sole", "proc"], review: ["slip"], tags: ["process", "inline"] },
+      { id: "v7", label: "EN 14878 flammability and REACH reports valid for the fabric lot", method: "doc", base: 4, tech: ["reg"], review: [], tags: ["doc"] },
+      { id: "v8", label: "Pilling test grade 3–4 after 20 washes", method: "inline", base: 3, tech: ["pile"], review: ["pills"], tags: ["process"] },
+      { id: "v9", label: "Snap component lot traceability to garment lot", method: "doc", base: 3, tech: ["mat", "snap"], review: ["snaps", "slip"], tags: ["doc", "subcontract"] },
+      { id: "v10", label: "100% snap tug check at final station, unannounced observation", method: "visit", base: 4, tech: ["snap"], review: ["snaps"], tags: ["final", "visit"] },
+      { id: "v11", label: "Compacting and pre-shrink settings on dyed velour", method: "inline", base: 3, tech: ["proc"], review: ["shrink"], tags: ["process", "inline"] },
+      { id: "v12", label: "Screen-print ink and sole dot supplier change control", method: "doc", base: 3, tech: ["sole"], review: ["slip"], tags: ["doc", "subcontract"] },
+      { id: "v13", label: "Corrective actions from last recall closed and verified", method: "doc", base: 3, tech: [], review: [], tags: ["doc", "process", "final"] },
+      { id: "v14", label: "Final inspection sampling plan applied (AQL 1.0)", method: "doc", base: 3, tech: [], review: [], tags: ["final", "doc"] },
+      { id: "v15", label: "Night shift snap setting matches day shift settings", method: "visit", base: 2, tech: ["proc"], review: [], tags: ["visit", "process"] },
+      { id: "v16", label: "Broken needle policy and 100% metal detection before packing", method: "inline", base: 3, tech: ["mat"], review: [], tags: ["process"] },
+      { id: "v17", label: "Calibration of snap pull gauges and wash test equipment", method: "doc", base: 2, tech: ["snap", "size"], review: [], tags: ["doc", "lab"] },
+      { id: "v18", label: "Operator training records for snap setting and sole dot stations", method: "doc", base: 2, tech: ["snap"], review: [], tags: ["doc", "process"] },
+      { id: "v19", label: "Colour fastness to washing on the green shades", method: "lab", base: 1, tech: [], review: [], tags: ["lab"] },
+      { id: "v20", label: "Care label and size label accuracy", method: "lab", base: 1, tech: [], review: [], tags: ["lab"] },
+    ],
+  },
+
+  p6: {
+    name: qvName("p6"),
+    short: "Long-sleeved bodysuits",
+    family: "textile",
+    familyLabel: "Baby bodysuits",
+    context: "Cotton interlock, cut and sew, envelope neck, crotch snap tape",
+    defaults: { country: "Bangladesh", nq: "rising", iso: "none", extras: ["iso14001", "oekotex", "bsci"], qa: "improving", dpr: "conditional" },
+    techPack: [
+      { id: "mat", kind: "Material", text: "100% combed cotton interlock, 190 g/m², reactive dyed and printed", conf: 0.95 },
+      { id: "proc", kind: "Process", text: "Cut and sew, overlock and flatlock seams, envelope neck binding, crotch snap tape", conf: 0.9 },
+      { id: "seam", kind: "Critical characteristic", text: "Seam strength above 100 N at crotch and shoulders", conf: 0.88 },
+      { id: "snap", kind: "Critical characteristic", text: "Crotch snap pull-off above 90 N after 20 washes", conf: 0.92 },
+      { id: "neck", kind: "Critical characteristic", text: "Envelope neck opening stretches over a head form and recovers", conf: 0.87 },
+      { id: "fast", kind: "Critical characteristic", text: "Colour fastness to washing and saliva grade 4", conf: 0.89 },
+      { id: "reg", kind: "Regulatory", text: "EN 71-3 on snaps and print, nickel release, REACH, OEKO-TEX class I for babies", conf: 0.96 },
+    ],
+    reviews: [
+      { id: "fade", text: "Colours fade or bleed in the wash", freq: "frequent", sev: "minor", maps: ["fast", "mat"], quote: "The pink one faded after ten washes and stained the white vests." },
+      { id: "snapoff", text: "Crotch snaps tear away", freq: "medium", sev: "severe", maps: ["snap", "proc"], quote: "The snap tape tore after a month; one snap was missing." },
+      { id: "neckopen", text: "Neck opening too tight over the head", freq: "medium", sev: "minor", maps: ["neck", "mat"], quote: "Nice fabric, but getting it over my baby's head is a struggle." },
+      { id: "seamopen", text: "Seams open at the crotch", freq: "rare", sev: "minor", maps: ["seam"], quote: "The crotch seam started to split next to the snaps." },
+    ],
+    pool: [
+      { id: "b1", label: "Crotch snap pull-off above 90 N after 5 washes", method: "lab", base: 5, tech: ["snap"], review: ["snapoff"], tags: ["lab", "final"] },
+      { id: "b2", label: "Stitch density and thread tension checked at overlock line", method: "inline", base: 5, tech: ["seam", "proc"], review: ["snapoff"], tags: ["process", "inline"] },
+      { id: "b3", label: "Colour fastness to washing and saliva on each colourway", method: "lab", base: 4, tech: ["fast"], review: ["fade"], tags: ["lab", "final"] },
+      { id: "b4", label: "Snap setting pressure and snap tape stitching logged per lot", method: "inline", base: 4, tech: ["proc", "snap"], review: ["snapoff"], tags: ["process", "inline"] },
+      { id: "b5", label: "Neck extension and recovery on head form after 20 washes", method: "lab", base: 4, tech: ["neck"], review: ["neckopen"], tags: ["lab"] },
+      { id: "b6", label: "EN 71-3, nickel release and REACH reports for snap and print lots", method: "doc", base: 4, tech: ["reg"], review: [], tags: ["doc"] },
+      { id: "b7", label: "Sewing subcontractor list and on-site verification", method: "visit", base: 4, tech: ["proc"], review: ["snapoff"], tags: ["visit", "subcontract"] },
+      { id: "b8", label: "Interlock roll traceability to garment lot", method: "doc", base: 3, tech: ["mat"], review: ["fade"], tags: ["doc", "subcontract"] },
+      { id: "b9", label: "Seam strength at crotch and shoulders above 100 N", method: "lab", base: 3, tech: ["seam", "mat"], review: ["seamopen"], tags: ["lab"] },
+      { id: "b10", label: "Final inspection sampling plan applied (AQL 2.5)", method: "doc", base: 3, tech: [], review: [], tags: ["final", "doc"] },
+      { id: "b11", label: "In-house lab equipment calibrated and used", method: "visit", base: 3, tech: [], review: [], tags: ["visit", "lab"] },
+      { id: "b12", label: "Snap and needle specification match tech pack", method: "doc", base: 3, tech: ["snap"], review: ["snapoff"], tags: ["doc", "process"] },
+      { id: "b13", label: "Corrective actions on field returns closed and verified", method: "doc", base: 3, tech: [], review: [], tags: ["doc", "process", "final"] },
+      { id: "b14", label: "Unannounced production floor walk, night shift", method: "visit", base: 2, tech: ["proc"], review: [], tags: ["visit", "process"] },
+      { id: "b15", label: "Fabric weight and width on incoming interlock rolls", method: "inline", base: 3, tech: ["mat"], review: ["neckopen"], tags: ["process"] },
+      { id: "b16", label: "Snap supplier source and change control", method: "doc", base: 3, tech: ["snap", "reg"], review: ["snapoff"], tags: ["doc", "subcontract"] },
+      { id: "b17", label: "Neck binding tension set per size", method: "inline", base: 2, tech: ["neck"], review: ["neckopen"], tags: ["process"] },
+      { id: "b18", label: "Label and care instruction accuracy", method: "doc", base: 1, tech: [], review: [], tags: ["doc"] },
+      { id: "b19", label: "Packing and 3-pack poly bag specification", method: "doc", base: 1, tech: [], review: [], tags: ["doc"] },
+      { id: "b20", label: "Operator skill matrix for snap setting stations", method: "doc", base: 2, tech: ["snap"], review: [], tags: ["doc", "process"] },
+    ],
+  },
+
+  p9: {
+    name: qvName("p9"),
+    short: "Lace-collar bodysuit",
+    family: "textile",
+    familyLabel: "Baby bodysuits",
+    context: "Technical assembly: cotton rib, lace collar setting, back snap placket",
+    defaults: { country: "China", nq: "spike", iso: "expired", extras: [], qa: "improving", dpr: "conditional" },
+    techPack: [
+      { id: "mat", kind: "Material", text: "100% cotton 1×1 rib, 190 g/m², cotton guipure lace collar", conf: 0.94 },
+      { id: "proc", kind: "Process", text: "Cut and sew, lace collar set into neck binding, back snap placket", conf: 0.9 },
+      { id: "lace", kind: "Critical characteristic", text: "Lace collar attachment above 50 N, no loose loop", conf: 0.89 },
+      { id: "soft", kind: "Critical characteristic", text: "Lace edge soft on skin, pH 4.0–7.5 on skin-contact parts", conf: 0.88 },
+      { id: "trim", kind: "Critical characteristic", text: "No thread or loop longer than 1 cm near the neck", conf: 0.86 },
+      { id: "snap", kind: "Critical characteristic", text: "Back snap pull-off above 90 N, no sharp edge", conf: 0.9 },
+      { id: "reg", kind: "Regulatory", text: "EN 14682 cords and loops, EN 71-3 on snaps, REACH on lace dyes", conf: 0.95 },
+    ],
+    reviews: [
+      { id: "lacetear", text: "Lace collar tears or comes unstitched", freq: "medium", sev: "severe", maps: ["lace", "proc"], quote: "Second wash, the lace came loose at the neck." },
+      { id: "scratch", text: "Lace scratches the baby's neck", freq: "frequent", sev: "severe", maps: ["soft", "mat"], quote: "Pretty, but it left red marks under my daughter's chin." },
+      { id: "threads", text: "Loose threads around the collar", freq: "medium", sev: "minor", maps: ["trim", "proc"], quote: "Lots of loose threads to cut before she could wear it." },
+      { id: "snapback", text: "Back snaps stiff to close", freq: "rare", sev: "minor", maps: ["snap"], quote: "The snaps at the back are really hard to do up." },
+    ],
+    pool: [
+      { id: "l1", label: "Lace collar attachment above 50 N after 5 washes", method: "lab", base: 5, tech: ["lace"], review: ["lacetear"], tags: ["lab", "final"] },
+      { id: "l2", label: "Lace edge softness and pH on skin-contact parts per lot", method: "lab", base: 5, tech: ["soft"], review: ["scratch"], tags: ["lab", "final"] },
+      { id: "l3", label: "Lace trim supplier identity and batch certificate", method: "doc", base: 4, tech: ["mat", "lace"], review: ["lacetear"], tags: ["doc", "subcontract"] },
+      { id: "l4", label: "Loose thread and loop length at neck, sampled per lot", method: "lab", base: 4, tech: ["trim"], review: ["threads"], tags: ["lab", "final"] },
+      { id: "l5", label: "Collar setting stitch type and seam allowance logs", method: "inline", base: 4, tech: ["proc", "lace"], review: ["lacetear"], tags: ["process", "inline"] },
+      { id: "l6", label: "Thread trimming checked at the collar station", method: "inline", base: 4, tech: ["proc", "trim"], review: ["threads"], tags: ["process", "inline"] },
+      { id: "l7", label: "Lace edge abrasion against a skin simulant", method: "lab", base: 4, tech: ["soft"], review: ["scratch"], tags: ["lab"] },
+      { id: "l8", label: "EN 14682 and REACH certificate valid for lace and fabric lot", method: "doc", base: 4, tech: ["reg"], review: [], tags: ["doc"] },
+      { id: "l9", label: "Final inspection: neck stretch and collar pull on 5 bodysuits per lot", method: "visit", base: 4, tech: [], review: ["lacetear", "threads"], tags: ["final", "visit"] },
+      { id: "l10", label: "Unannounced visit to the lace subcontractor", method: "visit", base: 3, tech: ["lace"], review: ["lacetear"], tags: ["visit", "subcontract"] },
+      { id: "l11", label: "Lace softening finish settings and lot traceability", method: "inline", base: 3, tech: ["mat", "soft"], review: ["scratch"], tags: ["process", "subcontract"] },
+      { id: "l12", label: "Corrective actions from recall closed and verified", method: "doc", base: 3, tech: [], review: [], tags: ["doc", "process", "final"] },
+      { id: "l13", label: "EN 71-3 report for snaps and lace dyes", method: "doc", base: 3, tech: ["reg", "mat"], review: [], tags: ["doc"] },
+      { id: "l14", label: "Final inspection sampling plan applied (AQL 1.0)", method: "doc", base: 3, tech: [], review: [], tags: ["final", "doc"] },
+      { id: "l15", label: "Pull gauges for lace and snap tests calibrated", method: "doc", base: 2, tech: ["lace"], review: [], tags: ["doc", "lab"] },
+      { id: "l16", label: "Back snap closing force and cycling, 500 open-close", method: "lab", base: 2, tech: ["snap"], review: ["snapback"], tags: ["lab"] },
+      { id: "l17", label: "Night shift collar setting matches day shift settings", method: "visit", base: 2, tech: ["proc"], review: [], tags: ["visit", "process"] },
+      { id: "l18", label: "Operator training on lace collar setting", method: "doc", base: 2, tech: ["lace"], review: [], tags: ["doc", "process"] },
+      { id: "l19", label: "Colour fastness of the nude shade to washing", method: "lab", base: 1, tech: [], review: [], tags: ["lab"] },
+      { id: "l20", label: "Hanger and packaging spec", method: "doc", base: 1, tech: [], review: [], tags: ["doc"] },
+    ],
+  },
+
+  p10: {
+    name: qvName("p10"),
+    short: "'Minnie' bodysuits",
+    family: "textile",
+    familyLabel: "Baby licensed bodysuits",
+    context: "Cotton jersey with licensed placement print, snap tape assembly",
+    defaults: { country: "Vietnam", nq: "spike", iso: "certified", extras: ["oekotex"], qa: "strong", dpr: "compliant" },
+    techPack: [
+      { id: "mat", kind: "Material", text: "100% cotton single jersey, 160 g/m², almond green and printed ecru, licensed artwork", conf: 0.95 },
+      { id: "proc", kind: "Process", text: "Placement print of the licensed artwork, cut and sew, lap shoulders, crotch snap tape", conf: 0.91 },
+      { id: "print", kind: "Critical characteristic", text: "Print adhesion, no cracking at grade 4 after 20 washes", conf: 0.94 },
+      { id: "snap", kind: "Critical characteristic", text: "Crotch snap pull-off above 90 N, snap tape intact after 20 washes", conf: 0.89 },
+      { id: "art", kind: "Critical characteristic", text: "Artwork colours and position match the licence style guide, ±5 mm", conf: 0.88 },
+      { id: "dim", kind: "Critical characteristic", text: "Body length and width within ±1 cm per size after washing", conf: 0.9 },
+      { id: "reg", kind: "Regulatory", text: "EN 71-3 on print inks and snaps, REACH, licensor product safety requirements", conf: 0.97 },
+    ],
+    reviews: [
+      { id: "crack", text: "Print cracks and flakes after washing", freq: "medium", sev: "severe", maps: ["proc", "print"], quote: "Minnie's face started cracking after a few washes; flakes came off in the cot." },
+      { id: "snaps", text: "Crotch snaps loosen or pop open", freq: "frequent", sev: "minor", maps: ["snap", "proc"], quote: "The snaps keep popping open every time she kicks." },
+      { id: "shrink", text: "Shrinks and gets too short", freq: "medium", sev: "minor", maps: ["dim"], quote: "Lovely print, but after one wash it is too short in the body." },
+      { id: "offtone", text: "Colours differ from the picture", freq: "rare", sev: "minor", maps: ["art"], quote: "The green is much duller than online." },
+    ],
+    pool: [
+      { id: "n1", label: "Print adhesion and crack test after 20 washes, samples per lot", method: "lab", base: 5, tech: ["print"], review: [], tags: ["lab", "final"] },
+      { id: "n2", label: "Print curing: dryer temperature, belt speed and dwell logged per lot", method: "inline", base: 5, tech: ["proc", "print"], review: ["crack"], tags: ["process", "inline"] },
+      { id: "n3", label: "Crotch snap pull-off above 90 N after 5 washes", method: "lab", base: 5, tech: ["snap"], review: ["snaps"], tags: ["lab", "final"] },
+      { id: "n4", label: "Ink film thickness and screen tension checked at the print table", method: "inline", base: 4, tech: ["print", "mat"], review: ["crack"], tags: ["process", "inline"] },
+      { id: "n5", label: "Print flexing after heat aging, no crack at the artwork edge", method: "lab", base: 4, tech: ["proc", "mat"], review: ["crack"], tags: ["lab"] },
+      { id: "n6", label: "Dimensional stability after 3 washes, ±1 cm", method: "lab", base: 4, tech: ["dim"], review: ["shrink"], tags: ["lab", "final"] },
+      { id: "n7", label: "EN 71-3 and REACH reports valid for the ink and snap lots", method: "doc", base: 4, tech: ["reg"], review: [], tags: ["doc"] },
+      { id: "n8", label: "Snap tape and snap sub-assembly source and change control", method: "doc", base: 4, tech: ["snap"], review: ["snaps"], tags: ["doc", "subcontract"] },
+      { id: "n9", label: "Approved artwork revision in use at the print table, 100% check", method: "visit", base: 4, tech: ["proc", "art"], review: [], tags: ["final", "visit"] },
+      { id: "n10", label: "Snap opening and closing, 500 cycles", method: "lab", base: 3, tech: ["snap"], review: ["snaps"], tags: ["lab"] },
+      { id: "n11", label: "Ink lot traceability to garment lot", method: "doc", base: 3, tech: ["mat"], review: ["crack"], tags: ["doc", "subcontract"] },
+      { id: "n12", label: "Corrective actions from last recall closed and verified", method: "doc", base: 3, tech: [], review: [], tags: ["doc", "process", "final"] },
+      { id: "n13", label: "Final inspection sampling plan applied (AQL 1.0)", method: "doc", base: 3, tech: [], review: [], tags: ["final", "doc"] },
+      { id: "n14", label: "Colour cabinet and wash test equipment calibrated", method: "doc", base: 2, tech: ["art"], review: [], tags: ["doc", "lab"] },
+      { id: "n15", label: "Night shift print line matches day shift settings", method: "visit", base: 2, tech: ["proc"], review: [], tags: ["visit", "process"] },
+      { id: "n16", label: "Jersey compacting settings before cutting", method: "inline", base: 2, tech: ["mat"], review: ["shrink"], tags: ["process"] },
+      { id: "n17", label: "Operator training records for print and snap stations", method: "doc", base: 2, tech: ["proc"], review: [], tags: ["doc", "process"] },
+      { id: "n18", label: "Neck label print legibility after washing", method: "lab", base: 1, tech: [], review: [], tags: ["lab"] },
+      { id: "n19", label: "Colour match of the almond green to the standard", method: "lab", base: 1, tech: [], review: [], tags: ["lab"] },
+      { id: "n20", label: "Box, licence hangtag and hologram specification", method: "doc", base: 1, tech: [], review: [], tags: ["doc"] },
+    ],
+  },
+};
+
+/* ---------------------------------------------------------------- Social audit (same engine, own data) */
+const QV_SOC_METHODS = { interview: { label: "Worker interviews" }, doc: { label: "Document review" }, visit: { label: "Unannounced visit" }, walk: { label: "Site walkthrough" } };
+const QV_SOC_COUNTRIES = {
+  Italy: { note: "Strong labour law enforcement; risk concentrated in small subcontracted workshops.", boosts: { subcontract: 0.2 } },
+  Portugal: { note: "Mature labour framework; seasonal peaks handled with temporary contracts.", boosts: {} },
+  Vietnam: { note: "Fast-growing capacity, overtime peaks before shipments, limited freedom of association.", boosts: { hours: 0.3, voice: 0.3 } },
+  China: { note: "Deep supplier tiers, overtime and double time records, limited freedom of association.", boosts: { hours: 0.35, doc: 0.3, voice: 0.3 } },
+  Bangladesh: { note: "Textile-dense, high subcontracting, building and fire safety under close watch.", boosts: { subcontract: 0.5, ohs: 0.4, wages: 0.3 } },
+};
+// Input 1 — grievances and external alerts (last three years, number of cases)
+const QV_SOC_GRIEVANCES = {
+  low: { label: "Low and stable — 2 / 1 / 2 grievances, closed in time", costs: [2, 1, 2], trend: "Stable", type: "Internal grievances", score: 12, boosts: { voice: 0.15 }, signal: "Few grievances, all closed through the internal channel within the deadline." },
+  spike: { label: "One spike — NGO alert two years ago, then quiet", costs: [9, 2, 1], trend: "Recovered", type: "NGO alert, then grievances", score: 40, boosts: { remed: 0.3, wages: 0.2 }, signal: "One NGO alert on home-based work, then two quiet years. The remediation must be verified as closed." },
+  rising: { label: "Rising — 3 / 7 / 14 hotline reports", costs: [3, 7, 14], trend: "Rising", type: "Worker hotline reports", score: 68, boosts: { hours: 0.4, wages: 0.4, voice: 0.3 }, signal: "Hotline reports have quadrupled in three years and bypass the internal channel. Workers no longer trust local management." },
+  degrading: { label: "Degrading — 5 / 12 / 21 cases, one NGO alert", costs: [5, 12, 21], trend: "Degrading", type: "Hotline reports and NGO alert", score: 88, boosts: { hours: 0.5, wages: 0.5, subcontract: 0.4, voice: 0.4 }, signal: "Cases have quadrupled, with one public NGO alert. Social risk is now the supplier's dominant signal." },
+  none: { label: "No history — new supplier", costs: [], trend: "Unknown", type: "None recorded", score: 50, boosts: { doc: 0.3, visit: 0.3 }, signal: "No grievance record exists. Absence of data is treated as risk, not as evidence." },
+};
+// Input 2 — social certification and standards met
+const QV_SOC_CERT = {
+  certified: { label: "SA8000 certified", score: 15, boosts: {} },
+  expired: { label: "SA8000 expired", score: 55, boosts: { doc: 0.4, remed: 0.2 } },
+  none: { label: "No SA8000", score: 80, boosts: { doc: 0.6, voice: 0.3 } },
+};
+const QV_SOC_EXTRAS = {
+  bsci: { label: "amfori BSCI", relief: 10 },
+  smeta: { label: "SMETA 4-pillar", relief: 10 },
+  wrap: { label: "WRAP", relief: 5 },
+  ils: { label: "Disney ILS", relief: 10, families: ["licensed"] },
+};
+// Input 3a — past KIABI social audits (last three, scored /100)
+const QV_SOC_AUDITS = {
+  strong: { label: "Strong — 91 / 89 / 94", scores: [91, 89, 94], findings: ["None", "1 minor", "None"], score: 10, boosts: {}, signal: "Three consistent social audits, no zero-tolerance finding." },
+  improving: { label: "Weak but improving — 62 / 71 / 79", scores: [62, 71, 79], findings: ["2 major, overtime", "1 major, wages", "2 minor"], score: 40, boosts: { hours: 0.3 }, signal: "Social audits are recovering; the last major finding on overtime closed only one cycle ago." },
+  worsening: { label: "Worsening — 87 / 76 / 64", scores: [87, 76, 64], findings: ["None", "2 minor, records", "1 major, double books"], score: 78, boosts: { doc: 0.6, hours: 0.4, wages: 0.5 }, signal: "Social audit scores fall at each cycle and the last one found a second set of time records." },
+  none: { label: "None — new supplier", scores: [], findings: [], score: 55, boosts: { doc: 0.3, visit: 0.4 }, signal: "No KIABI social audit on record." },
+};
+// Input 3b — past amfori BSCI audits (last three, rating A to E)
+const QV_SOC_BSCI = {
+  compliant: { label: "Good — rated A, A, B", results: ["A", "A", "B"], majors: [0, 0, 0], score: 10, boosts: {}, signal: "Third-party audits rated A or B three times, no critical finding." },
+  conditional: { label: "Acceptable — rated C, 1 finding open", results: ["B", "C", "C"], majors: [0, 1, 1], score: 45, boosts: { doc: 0.3, hours: 0.3 }, signal: "Rated C twice; the same working-hours finding remains open." },
+  worsening: { label: "Worsening — B, D, E", results: ["B", "D", "E"], majors: [0, 2, 3], score: 82, boosts: { hours: 0.5, wages: 0.4, visit: 0.5, subcontract: 0.3 }, signal: "Third-party rating fell from B to E in three cycles; the site is under a remediation obligation." },
+  none: { label: "None — new supplier", results: [], majors: [], score: 55, boosts: { doc: 0.3, visit: 0.4 }, signal: "No third-party social audit on record." },
+};
+const qvSocCards = (proc) => [
+  { id: "std", kind: "Standard", text: "amfori BSCI code of conduct, 13 performance areas; SMETA 4-pillar accepted as equivalent", conf: 0.96 },
+  { id: "proc", kind: "Site process", text: proc, conf: 0.9 },
+  { id: "wage", kind: "Requirement", text: "Legal minimum wage paid on time, overtime paid at the premium rate", conf: 0.91 },
+  { id: "hours", kind: "Requirement", text: "Regular week of 48 h maximum, overtime voluntary and capped at 12 h", conf: 0.9 },
+  { id: "sub", kind: "Requirement", text: "Every subcontractor declared, approved and bound by the same code", conf: 0.88 },
+  { id: "ohs", kind: "Requirement", text: "Fire and building safety, machine guarding, no young worker on hazardous tasks", conf: 0.92 },
+  { id: "reg", kind: "Regulatory", text: "National labour law, EU CS3D due diligence, French Duty of Vigilance law", conf: 0.97 },
+];
+const qvSocPool = (x) => [
+  { id: "s1", label: "Confidential worker interviews on hours and overtime, off-site, 10% of the workforce", method: "interview", base: 5, tech: ["hours"], review: ["worker"], tags: ["voice", "hours"] },
+  { id: "s2", label: "Payroll, time records and payslips reconciled over three peak months", method: "doc", base: 5, tech: ["wage", "hours"], review: ["worker", "audit"], tags: ["doc", "wages"] },
+  { id: "s3", label: `Unannounced visit to the ${x.sub} and any undeclared workshop`, method: "visit", base: 4, tech: ["sub", "proc"], review: ["subcon"], tags: ["visit", "subcontract"] },
+  { id: "s4", label: "Declared capacity versus order volume, to detect hidden subcontracting", method: "doc", base: 4, tech: ["sub"], review: ["subcon"], tags: ["doc", "subcontract"] },
+  { id: "s5", label: "Fire exits, alarms and building safety walkthrough on every floor", method: "walk", base: 4, tech: ["ohs"], review: ["audit"], tags: ["ohs", "visit"] },
+  { id: "s6", label: "Remediation plan from the last alert closed and verified with evidence", method: "doc", base: 4, tech: ["std"], review: ["ngo"], tags: ["remed", "doc"] },
+  { id: "s7", label: "Grievance channel tested: anonymous hotline and worker committee", method: "interview", base: 4, tech: ["std"], review: ["worker", "ngo"], tags: ["voice"] },
+  { id: "s8", label: "Age verification files for every worker, young worker register", method: "doc", base: 4, tech: ["ohs", "reg"], review: [], tags: ["doc"] },
+  { id: "s9", label: "Machine guarding and needle guards on the sewing lines", method: "walk", base: 3, tech: ["ohs", "proc"], review: [], tags: ["ohs"] },
+  { id: "s10", label: "Overtime premium applied on the last twelve payrolls", method: "doc", base: 3, tech: ["wage"], review: ["worker"], tags: ["wages", "doc"] },
+  { id: "s11", label: "Temporary and migrant workers interviewed on recruitment fees", method: "interview", base: 3, tech: ["wage", "reg"], review: ["ngo"], tags: ["voice", "wages"] },
+  { id: "s12", label: "Night and Sunday presence check during the peak season", method: "visit", base: 3, tech: ["hours"], review: ["worker"], tags: ["visit", "hours"] },
+  { id: "s13", label: "Previous social audit findings tracked to closure", method: "doc", base: 3, tech: ["std"], review: ["audit"], tags: ["remed", "doc"] },
+  { id: "s14", label: "Subcontractor list signed and matched to purchase orders", method: "doc", base: 3, tech: ["sub"], review: ["subcon"], tags: ["doc", "subcontract"] },
+  { id: "s15", label: "Canteen, sanitary facilities and dormitories, if provided", method: "walk", base: 2, tech: ["ohs"], review: [], tags: ["ohs"] },
+  { id: "s16", label: "Worker representative election records", method: "doc", base: 2, tech: ["std", "reg"], review: ["ngo"], tags: ["voice", "doc"] },
+  { id: "s17", label: `Due diligence mapping of tier-2 sites: ${x.tier2}`, method: "doc", base: 2, tech: ["reg", "sub"], review: [], tags: ["doc", "subcontract"] },
+  { id: "s18", label: "Supervisor interviews on production targets and piece rates", method: "interview", base: 2, tech: ["wage", "hours"], review: [], tags: ["wages"] },
+  { id: "s19", label: "Code of conduct displayed in the local language", method: "doc", base: 1, tech: [], review: [], tags: ["doc"] },
+  { id: "s20", label: "Social policy signed by top management", method: "doc", base: 1, tech: [], review: [], tags: ["doc"] },
+];
+const QV_SOC_PRODUCTS = {
+  p2: {
+    name: qvName("p2"), short: "Velour pyjamas", family: "textile", familyLabel: "Baby nightwear",
+    context: "Velour knitting and dyeing, cut and sew, outsourced printing",
+    defaults: { country: "Portugal", grv: "spike", sa: "none", extras: ["bsci"], ksa: "strong", bsci: "compliant" },
+    techPack: qvSocCards("Velour knitting and piece dyeing in-house, cut and sew; front motif printing and sole dots outsourced"),
+    reviews: [
+      { id: "ngo", text: "NGO report on home-based finishing work in the region", freq: "rare", sev: "severe", maps: ["sub", "wage"], quote: "Home-based workers paid per piece to fix non-slip soles, below the legal minimum." },
+      { id: "worker", text: "Temporary workers report unpaid overtime in the peak", freq: "medium", sev: "minor", maps: ["hours", "wage"], quote: "In October we stay until 9 pm; the extra hours come as a bonus, not as overtime." },
+      { id: "subcon", text: "Front motif printing sent to an undeclared workshop", freq: "medium", sev: "severe", maps: ["sub", "proc"], quote: "Printed panels leave the site on Friday and come back on Monday; no print shop is declared." },
+      { id: "audit", text: "Past audits: temporary contracts incomplete", freq: "frequent", sev: "minor", maps: ["std", "reg"], quote: "12 of 40 temporary contracts could not be produced during the last audit." },
+    ],
+    pool: qvSocPool({ sub: "front-motif print shop", tier2: "dyeing, printing and sole-dot workshops" }),
+  },
+  p6: {
+    name: qvName("p6"), short: "Long-sleeved bodysuits", family: "textile", familyLabel: "Baby bodysuits",
+    context: "Vertical knit factory, 12 sewing lines, peak before shipment",
+    defaults: { country: "Bangladesh", grv: "rising", sa: "expired", extras: ["bsci", "wrap"], ksa: "improving", bsci: "conditional" },
+    techPack: qvSocCards("Vertical site: knitting, dyeing, 12 sewing lines, crotch snap setting, 3-pack packing"),
+    reviews: [
+      { id: "ngo", text: "NGO alert on forced overtime before shipment", freq: "medium", sev: "severe", maps: ["hours", "reg"], quote: "Workers describe 14-hour days for three weeks before the bodysuit shipment." },
+      { id: "worker", text: "Hotline reports on wage deductions", freq: "frequent", sev: "severe", maps: ["wage", "std"], quote: "They cut our pay when the line misses the hourly target." },
+      { id: "subcon", text: "Snap setting sent to units not on the list", freq: "rare", sev: "severe", maps: ["sub", "proc"], quote: "Cut panels go out at night for snap setting to a unit nobody declared." },
+      { id: "audit", text: "Past audits: fire exits blocked again", freq: "medium", sev: "severe", maps: ["ohs"], quote: "Third-floor fire exit blocked by cartons, the same finding as the previous audit." },
+    ],
+    pool: qvSocPool({ sub: "snap-setting units", tier2: "yarn spinner and snap supplier" }),
+  },
+  p9: {
+    name: qvName("p9"), short: "Lace-collar bodysuit", family: "textile", familyLabel: "Baby bodysuits",
+    context: "Cut and sew with hand lace-collar setting",
+    defaults: { country: "China", grv: "degrading", sa: "certified", extras: ["smeta"], ksa: "worsening", bsci: "worsening" },
+    techPack: qvSocCards("Rib fabric bought in, cut and sew, lace collars set by hand, back snap placket"),
+    reviews: [
+      { id: "ngo", text: "NGO report on student interns in local garment factories", freq: "rare", sev: "severe", maps: ["ohs", "reg"], quote: "Vocational students placed on sewing lines during term time, night shifts included." },
+      { id: "worker", text: "Workers unsure how piece rates and overtime are paid", freq: "medium", sev: "minor", maps: ["wage"], quote: "Nobody explains the payslip; we only know the total changes every month." },
+      { id: "subcon", text: "Lace collars set in an undeclared family workshop", freq: "frequent", sev: "severe", maps: ["sub", "proc"], quote: "Collars are sewn in a small workshop across the street, teenagers included after school." },
+      { id: "audit", text: "Past audits: time records do not match the output", freq: "medium", sev: "severe", maps: ["hours", "std"], quote: "The recorded hours cannot explain the lace-collar output of the audited week." },
+    ],
+    pool: qvSocPool({ sub: "lace collar workshop", tier2: "rib knitter and lace maker" }),
+  },
+  p10: {
+    name: qvName("p10"), short: "'Minnie' bodysuits", family: "licensed", familyLabel: "Baby licensed bodysuits",
+    context: "Licensed placement print, cut and sew, snap setting",
+    defaults: { country: "Vietnam", grv: "low", sa: "none", extras: ["ils"], ksa: "improving", bsci: "compliant" },
+    techPack: qvSocCards("Licensed placement printing, cut and sew, snap setting; the licensor's authorised-facility list applies"),
+    reviews: [
+      { id: "ngo", text: "Licensor programme flagged overtime at a sister site", freq: "rare", sev: "minor", maps: ["hours", "std"], quote: "A sister factory of the same group received an overtime finding in the licensor programme." },
+      { id: "worker", text: "Saturday work when licensed orders arrive", freq: "medium", sev: "minor", maps: ["hours"], quote: "When the licensed order lands, Saturday work becomes the rule for a month." },
+      { id: "subcon", text: "Licensed print sent to a non-authorised print shop", freq: "rare", sev: "severe", maps: ["sub", "reg"], quote: "The shop printing the licensed artwork is not on the authorised facility list." },
+      { id: "audit", text: "Past audits: protective equipment missing in the print shop", freq: "medium", sev: "minor", maps: ["ohs", "proc"], quote: "Printers handle solvent cleaners without gloves or masks." },
+    ],
+    pool: qvSocPool({ sub: "licensed print shop", tier2: "fabric mill and ink supplier" }),
+  },
+};
+
+/* ---------------------------------------------------------------- Environmental audit */
+const QV_ENV_METHODS = { lab: { label: "Wastewater test" }, meter: { label: "Meter and data check" }, doc: { label: "Document review" }, visit: { label: "Unannounced visit" } };
+const QV_ENV_COUNTRIES = {
+  Italy: { note: "Strict discharge permits and regular inspections by the authorities.", boosts: {} },
+  Portugal: { note: "EU wastewater rules; dyeing clusters share municipal treatment plants.", boosts: { water: 0.1 } },
+  Vietnam: { note: "Fast-growing wet processing, uneven treatment plants in industrial parks.", boosts: { water: 0.3, chem: 0.2 } },
+  China: { note: "Deep dyeing and printing tiers, coal-fired steam still common, tightening enforcement.", boosts: { energy: 0.3, chem: 0.3, subcontract: 0.25 } },
+  Bangladesh: { note: "Dense dyeing sector, groundwater depletion, treatment plants not always run.", boosts: { water: 0.5, chem: 0.3, visit: 0.35 } },
+};
+// Input 1 — wastewater and chemical test history (failed parameters per year)
+const QV_ENV_HISTORY = {
+  low: { label: "Low and stable — 1 / 0 / 1 failed parameters, conventional", costs: [1, 0, 1], trend: "Stable", type: "Conventional parameters", score: 12, boosts: { water: 0.15 }, signal: "Wastewater tests stay within ZDHC limits; isolated deviations on conventional parameters." },
+  spike: { label: "One spike — effluent spill two years ago, then quiet", costs: [7, 1, 1], trend: "Recovered", type: "Spill, then conventional", score: 40, boosts: { water: 0.3, waste: 0.2 }, signal: "One effluent spill reported by the authorities, then two quiet years. The treatment upgrade must be verified." },
+  rising: { label: "Rising — 2 / 5 / 9 failed parameters, restricted substances", costs: [2, 5, 9], trend: "Rising", type: "MRSL substances detected", score: 68, boosts: { chem: 0.4, lab: 0.4, water: 0.3 }, signal: "Failed parameters have quadrupled and now include restricted substances. Chemical inputs are not under control." },
+  degrading: { label: "Degrading — 4 / 9 / 16 failed parameters, one permit breach", costs: [4, 9, 16], trend: "Degrading", type: "MRSL substances and permit breach", score: 88, boosts: { chem: 0.5, water: 0.5, lab: 0.4, waste: 0.4 }, signal: "Failures have quadrupled, with one discharge permit breach. Environmental risk is now the supplier's dominant signal." },
+  none: { label: "No history — new supplier", costs: [], trend: "Unknown", type: "None recorded", score: 50, boosts: { doc: 0.3, visit: 0.3 }, signal: "No test record exists. Absence of data is treated as risk, not as evidence." },
+};
+const QV_ENV_CERT = {
+  certified: { label: "ISO 14001 certified", score: 15, boosts: {} },
+  expired: { label: "ISO 14001 expired", score: 55, boosts: { doc: 0.4, chem: 0.2 } },
+  none: { label: "No ISO 14001", score: 80, boosts: { doc: 0.6, energy: 0.3 } },
+};
+const QV_ENV_EXTRAS = {
+  zdhc: { label: "ZDHC MRSL conformance", relief: 10, families: ["wet"] },
+  step: { label: "OEKO-TEX STeP", relief: 10 },
+  bluesign: { label: "bluesign", relief: 5, families: ["wet"] },
+  iso50001: { label: "ISO 50001", relief: 5 },
+};
+const QV_ENV_AUDITS = {
+  strong: { label: "Strong — 90 / 92 / 93", scores: [90, 92, 93], findings: ["None", "1 minor", "None"], score: 10, boosts: {}, signal: "Three consistent environmental audits, no finding on chemicals or effluent." },
+  improving: { label: "Weak but improving — 58 / 69 / 78", scores: [58, 69, 78], findings: ["2 major, chemicals", "1 major, sludge", "2 minor"], score: 40, boosts: { chem: 0.3 }, signal: "Environmental audits are recovering; the chemical inventory finding closed only one cycle ago." },
+  worsening: { label: "Worsening — 86 / 74 / 63", scores: [86, 74, 63], findings: ["None", "2 minor, waste", "1 major, effluent bypass"], score: 78, boosts: { water: 0.6, chem: 0.4, waste: 0.5 }, signal: "Environmental audit scores fall at each cycle and the last one found an effluent bypass." },
+  none: { label: "None — new supplier", scores: [], findings: [], score: 55, boosts: { doc: 0.3, visit: 0.4 }, signal: "No KIABI environmental audit on record." },
+};
+const QV_ENV_HIGG = {
+  compliant: { label: "Verified — 3 of 3, no gap", results: ["Verified", "Verified", "Verified"], majors: [0, 0, 0], score: 10, boosts: {}, signal: "Higg FEM verified three times; the self-assessment holds on site." },
+  conditional: { label: "Gaps — 1 data gap open", results: ["Verified", "Gaps", "Gaps"], majors: [0, 1, 1], score: 45, boosts: { doc: 0.3, energy: 0.3 }, signal: "Higg FEM verification found the same energy data gap twice." },
+  worsening: { label: "Worsening — verified, 2 gaps, not verified", results: ["Verified", "Gaps", "Not verified"], majors: [0, 2, 3], score: 82, boosts: { water: 0.5, doc: 0.4, visit: 0.5, chem: 0.3 }, signal: "Higg FEM fell from verified to not verified in three cycles; self-declared data can no longer be trusted." },
+  none: { label: "None — new supplier", results: [], majors: [], score: 55, boosts: { doc: 0.3, visit: 0.4 }, signal: "No Higg FEM verification on record." },
+};
+const qvEnvCards = (proc) => [
+  { id: "std", kind: "Standard", text: "ZDHC wastewater guidelines and MRSL; Higg FEM self-assessment verified on site", conf: 0.95 },
+  { id: "proc", kind: "Site process", text: proc, conf: 0.9 },
+  { id: "chem", kind: "Requirement", text: "Chemical inventory complete, every input checked against the ZDHC MRSL", conf: 0.9 },
+  { id: "water", kind: "Requirement", text: "Effluent treated on site, ZDHC foundational limits met", conf: 0.91 },
+  { id: "energy", kind: "Requirement", text: "Energy and steam metered by process, coal phase-out plan in place", conf: 0.87 },
+  { id: "waste", kind: "Requirement", text: "Sludge and hazardous waste tracked and taken by licensed carriers", conf: 0.88 },
+  { id: "reg", kind: "Regulatory", text: "Local discharge permit, REACH restricted substances, EU CS3D environmental due diligence", conf: 0.96 },
+];
+const qvEnvPool = (x) => [
+  { id: "e1", label: "ZDHC wastewater test at the effluent outlet, conventional and MRSL parameters", method: "lab", base: 5, tech: ["water"], review: ["test", "community"], tags: ["lab", "water"] },
+  { id: "e2", label: "Chemical inventory reconciled with purchases and checked against the ZDHC MRSL", method: "doc", base: 5, tech: ["chem"], review: ["chemical"], tags: ["doc", "chem"] },
+  { id: "e3", label: "Unannounced night visit to the effluent treatment plant", method: "visit", base: 4, tech: ["water", "reg"], review: ["community"], tags: ["visit", "water"] },
+  { id: "e4", label: "Treatment plant flow meters, chemical dosing and sludge logs", method: "meter", base: 4, tech: ["water", "waste"], review: ["test"], tags: ["water", "waste"] },
+  { id: "e5", label: "Restricted substance test on finished goods, one per colourway", method: "lab", base: 4, tech: ["chem", "reg"], review: ["chemical"], tags: ["lab", "chem"] },
+  { id: "e6", label: "Discharge permit valid and matched to the actual volumes", method: "doc", base: 4, tech: ["reg", "water"], review: ["community"], tags: ["doc", "water"] },
+  { id: "e7", label: "Energy and steam meters per process, 12 months of data reviewed", method: "meter", base: 4, tech: ["energy"], review: ["energy"], tags: ["energy", "doc"] },
+  { id: "e8", label: "Chemical store: segregation, bunding, labels and safety data sheets", method: "visit", base: 3, tech: ["chem"], review: ["chemical"], tags: ["visit", "chem"] },
+  { id: "e9", label: `Tier-2 wet-processing sites listed with their own ZDHC tests: ${x.sub}`, method: "doc", base: 3, tech: ["std", "proc"], review: ["test"], tags: ["doc", "subcontract"] },
+  { id: "e10", label: "Hazardous waste and sludge handed to licensed carriers, manifests checked", method: "visit", base: 3, tech: ["waste"], review: ["community"], tags: ["visit", "waste"] },
+  { id: "e11", label: "Water intake metered, groundwater licence checked", method: "meter", base: 3, tech: ["energy", "reg"], review: ["energy"], tags: ["water", "energy"] },
+  { id: "e12", label: "Corrective actions from the last environmental audit closed and verified", method: "doc", base: 3, tech: [], review: [], tags: ["doc", "chem", "water"] },
+  { id: "e13", label: "Daily pH and temperature checks on the effluent", method: "lab", base: 3, tech: ["water"], review: ["test"], tags: ["lab", "water"] },
+  { id: "e14", label: "Higg FEM self-assessment evidence pack verified", method: "doc", base: 3, tech: ["std"], review: [], tags: ["doc"] },
+  { id: "e15", label: "Boiler house: fuel type and coal phase-out plan", method: "visit", base: 2, tech: ["energy"], review: ["energy"], tags: ["visit", "energy"] },
+  { id: "e16", label: "Chemical suppliers' ZDHC Gateway certificates", method: "doc", base: 2, tech: ["chem"], review: [], tags: ["doc", "chem"] },
+  { id: "e17", label: "Operator training on chemical handling and spill response", method: "doc", base: 2, tech: ["chem", "waste"], review: [], tags: ["doc"] },
+  { id: "e18", label: "Dryer and compressor idle time monitored", method: "meter", base: 2, tech: ["energy", "proc"], review: ["energy"], tags: ["energy"] },
+  { id: "e19", label: "Environmental policy signed by top management", method: "doc", base: 1, tech: [], review: [], tags: ["doc"] },
+  { id: "e20", label: "Recycling of cutting waste and packaging", method: "doc", base: 1, tech: ["waste"], review: [], tags: ["waste"] },
+];
+const QV_ENV_PRODUCTS = {
+  p2: {
+    name: qvName("p2"), short: "Velour pyjamas", family: "wet", familyLabel: "Baby nightwear",
+    context: "Velour dyeing, finishing and printing",
+    defaults: { country: "Portugal", env: "spike", iso14: "certified", extras: ["zdhc"], kea: "strong", higg: "compliant" },
+    techPack: qvEnvCards("Velour knitting, jet piece dyeing and softening, stenter drying, front motif screen printing"),
+    reviews: [
+      { id: "test", text: "Colour in the effluent after dyeing peaks", freq: "medium", sev: "minor", maps: ["water", "proc"], quote: "Treated effluent still tinted green after the pine green batches." },
+      { id: "chemical", text: "Dye auxiliaries without safety data sheets", freq: "frequent", sev: "minor", maps: ["chem"], quote: "Four auxiliaries in the dye kitchen have no safety data sheet in Portuguese." },
+      { id: "energy", text: "Steam not metered per dyeing machine", freq: "medium", sev: "minor", maps: ["energy"], quote: "One gas meter for the whole site; no split between dyeing and drying." },
+      { id: "community", text: "River authority notice after a night discharge", freq: "rare", sev: "severe", maps: ["water", "reg"], quote: "Notice received after a night-time discharge above the permit colour limit." },
+    ],
+    pool: qvEnvPool({ sub: "sole-dot and print workshops" }),
+  },
+  p6: {
+    name: qvName("p6"), short: "Long-sleeved bodysuits", family: "wet", familyLabel: "Baby bodysuits",
+    context: "Vertical knit, dye and print site with effluent plant",
+    defaults: { country: "Bangladesh", env: "degrading", iso14: "certified", extras: ["step"], kea: "worsening", higg: "worsening" },
+    techPack: qvEnvCards("Vertical site: knitting, reactive dyeing, all-over printing, cut and sew, effluent treatment plant"),
+    reviews: [
+      { id: "test", text: "Wastewater tests fail on COD and colour", freq: "frequent", sev: "severe", maps: ["water", "std"], quote: "Three of the last four ZDHC tests above the COD foundational limit." },
+      { id: "chemical", text: "Restricted substance found in a pink dye lot", freq: "medium", sev: "severe", maps: ["chem", "proc"], quote: "APEO detected in the dusty pink lot; the auxiliary was not on the inventory." },
+      { id: "energy", text: "Groundwater pumping and gas boilers not metered", freq: "medium", sev: "minor", maps: ["energy"], quote: "Borehole water use is estimated, never measured." },
+      { id: "community", text: "Neighbours complain about night discharges", freq: "medium", sev: "severe", maps: ["water", "waste"], quote: "Villagers report dark water in the canal after midnight." },
+    ],
+    pool: qvEnvPool({ sub: "yarn dyer and snap plating supplier" }),
+  },
+  p9: {
+    name: qvName("p9"), short: "Lace-collar bodysuit", family: "cutsew", familyLabel: "Baby bodysuits",
+    context: "Cut and sew, wet processing at tier 2",
+    defaults: { country: "China", env: "low", iso14: "none", extras: [], kea: "improving", higg: "conditional" },
+    techPack: qvEnvCards("Cut and sew only; rib fabric and lace trim dyed by tier-2 mills; steam pressing"),
+    reviews: [
+      { id: "test", text: "No wastewater test from the lace dyer", freq: "medium", sev: "minor", maps: ["water", "proc"], quote: "The lace is dyed by a tier-2 mill that has never shared a ZDHC test." },
+      { id: "chemical", text: "Chlorinated spot remover used on the collar line", freq: "frequent", sev: "severe", maps: ["chem"], quote: "Operators use a chlorinated spot remover on lace stains." },
+      { id: "energy", text: "Coal-fired steam for pressing", freq: "medium", sev: "minor", maps: ["energy"], quote: "Pressing steam comes from the industrial park's coal boiler." },
+      { id: "community", text: "Industrial park under an inspection campaign", freq: "rare", sev: "minor", maps: ["reg"], quote: "The park must upgrade its shared treatment plant by next year." },
+    ],
+    pool: qvEnvPool({ sub: "rib knitter and lace dyer" }),
+  },
+  p10: {
+    name: qvName("p10"), short: "'Minnie' bodysuits", family: "wet", familyLabel: "Baby licensed bodysuits",
+    context: "Screen printing and curing, cut and sew",
+    defaults: { country: "Vietnam", env: "rising", iso14: "expired", extras: ["bluesign"], kea: "improving", higg: "conditional" },
+    techPack: qvEnvCards("Placement screen printing with water-based and plastisol inks, curing tunnels, cut and sew"),
+    reviews: [
+      { id: "test", text: "Screen-wash water sent untreated to the park plant", freq: "medium", sev: "minor", maps: ["water", "proc"], quote: "Screen washing water goes straight to the park drain without pre-treatment." },
+      { id: "chemical", text: "Plastisol inks with phthalates found in stock", freq: "rare", sev: "severe", maps: ["chem", "reg"], quote: "Old plastisol drums in the store, labelled with phthalate plasticisers." },
+      { id: "energy", text: "Curing tunnels left running between lots", freq: "frequent", sev: "minor", maps: ["energy", "proc"], quote: "Both curing tunnels stay on through lunch and changeovers." },
+      { id: "community", text: "Waste ink drums stored outdoors", freq: "medium", sev: "minor", maps: ["waste"], quote: "Empty ink drums piled behind the print shop, exposed to rain." },
+    ],
+    pool: qvEnvPool({ sub: "fabric dyer and ink supplier" }),
+  },
+};
+
+/* ---------------------------------------------------------------- Industrial audit */
+const QV_IND_METHODS = { inline: { label: "Line observation" }, capa: { label: "Capacity check" }, doc: { label: "Document review" }, visit: { label: "Unannounced visit" } };
+const QV_IND_COUNTRIES = {
+  Italy: { note: "Mature industrial base, skilled labour, limited capacity for mass volumes.", boosts: { capacity: 0.2 } },
+  Portugal: { note: "Reliable textile ecosystem, short lead times, capacity tight in the peak season.", boosts: { capacity: 0.2 } },
+  Vietnam: { note: "Fast-growing capacity, frequent subcontracting, variable maintenance culture.", boosts: { subcontract: 0.3, maint: 0.2 } },
+  China: { note: "Deep supplier tiers, automated large sites, subcontracting in the peaks.", boosts: { subcontract: 0.4, planning: 0.2 } },
+  Bangladesh: { note: "High-volume lines, power cuts, limited preventive maintenance.", boosts: { maint: 0.4, capacity: 0.3, subcontract: 0.4 } },
+};
+// Input 1 — share of late deliveries (last three years)
+const QV_IND_DELIVERY = {
+  low: { label: "Low and stable — 4 % / 3 % / 4 % late, minor delays", costs: [4, 3, 4], trend: "Stable", type: "Minor delays", score: 12, boosts: { planning: 0.15 }, signal: "Late deliveries stay low and flat; delays are absorbed before shipment." },
+  spike: { label: "One spike — 28 % late two years ago, then recovered", costs: [28, 6, 5], trend: "Recovered", type: "Capacity crisis, then minor delays", score: 40, boosts: { capacity: 0.3, maint: 0.2 }, signal: "One capacity crisis, then two quiet years. The capacity plan must be verified as robust." },
+  rising: { label: "Rising — 6 % / 13 % / 22 % late, air freight", costs: [6, 13, 22], trend: "Rising", type: "Late orders, air freight", score: 68, boosts: { capacity: 0.4, planning: 0.4, process: 0.3 }, signal: "Late deliveries have nearly quadrupled and force air freight. Capacity is oversold." },
+  degrading: { label: "Degrading — 9 % / 21 % / 35 % late, one cancelled order", costs: [9, 21, 35], trend: "Degrading", type: "Late and cancelled orders", score: 88, boosts: { capacity: 0.5, planning: 0.5, maint: 0.4, subcontract: 0.4 }, signal: "Late deliveries have quadrupled, with one cancelled order. Delivery failure is now the supplier's dominant signal." },
+  none: { label: "No history — new supplier", costs: [], trend: "Unknown", type: "None recorded", score: 50, boosts: { doc: 0.3, visit: 0.3 }, signal: "No delivery record exists. Absence of data is treated as risk, not as evidence." },
+};
+const QV_IND_CERT = {
+  certified: { label: "ISO 9001 certified", score: 15, boosts: {} },
+  expired: { label: "ISO 9001 expired", score: 55, boosts: { doc: 0.4, planning: 0.2 } },
+  none: { label: "No ISO 9001", score: 80, boosts: { doc: 0.6, process: 0.3 } },
+};
+const QV_IND_EXTRAS = {
+  iso45001: { label: "ISO 45001", relief: 5 },
+  lean: { label: "Lean / 5S programme", relief: 10 },
+  tpm: { label: "TPM maintenance", relief: 10 },
+  mes: { label: "Digital MES", relief: 5 },
+};
+const QV_IND_AUDITS = {
+  strong: { label: "Strong — 90 / 91 / 94", scores: [90, 91, 94], findings: ["None", "1 minor", "None"], score: 10, boosts: {}, signal: "Three consistent industrial audits, no recurring finding." },
+  improving: { label: "Weak but improving — 64 / 72 / 81", scores: [64, 72, 81], findings: ["2 major, maintenance", "1 major, planning", "2 minor"], score: 40, boosts: { maint: 0.3 }, signal: "Industrial audits are recovering; the last major finding on maintenance closed only one cycle ago." },
+  worsening: { label: "Worsening — 88 / 77 / 66", scores: [88, 77, 66], findings: ["None", "2 minor, line balancing", "1 major, capacity"], score: 78, boosts: { capacity: 0.6, process: 0.4, planning: 0.5 }, signal: "Industrial audit scores fall at each cycle and the last one carries a major finding on declared capacity." },
+  none: { label: "None — new supplier", scores: [], findings: [], score: 55, boosts: { doc: 0.3, visit: 0.4 }, signal: "No KIABI industrial audit on record." },
+};
+const QV_IND_CAPACITY = {
+  compliant: { label: "Confirmed — passed 3 of 3", results: ["Pass", "Pass", "Pass"], majors: [0, 0, 0], score: 10, boosts: {}, signal: "Declared capacity confirmed three times on site." },
+  conditional: { label: "Conditional — 1 major finding open", results: ["Pass", "Conditional", "Conditional"], majors: [0, 1, 1], score: 45, boosts: { capacity: 0.3, doc: 0.3 }, signal: "Capacity conditional twice; the same bottleneck finding remains open." },
+  worsening: { label: "Worsening — pass, 2 majors, fail", results: ["Pass", "Conditional", "Fail"], majors: [0, 2, 3], score: 82, boosts: { capacity: 0.5, doc: 0.4, visit: 0.5, subcontract: 0.3 }, signal: "Capacity verification fell from pass to fail in three cycles; declared minutes no longer match the lines." },
+  none: { label: "None — new supplier", results: [], majors: [], score: 55, boosts: { doc: 0.3, visit: 0.4 }, signal: "No capacity verification on record." },
+};
+const qvIndCards = (proc) => [
+  { id: "std", kind: "Standard", text: "KIABI industrial requirements: capacity declaration, process control plan, preventive maintenance", conf: 0.94 },
+  { id: "proc", kind: "Site process", text: proc, conf: 0.9 },
+  { id: "cap", kind: "Requirement", text: "Declared capacity matches lines, shifts and efficiency, in minutes per week", conf: 0.9 },
+  { id: "ctrl", kind: "Requirement", text: "Process control plan with first-off approval and checks at critical stations", conf: 0.89 },
+  { id: "maint", kind: "Requirement", text: "Preventive maintenance executed on plan, critical spare parts in stock", conf: 0.87 },
+  { id: "sub", kind: "Requirement", text: "Subcontracted operations declared, approved and capacity-checked", conf: 0.88 },
+  { id: "reg", kind: "Regulatory", text: "ISO 9001 quality management, machinery safety rules, contractual lead times", conf: 0.95 },
+];
+const qvIndPool = (x) => [
+  { id: "i1", label: "Capacity check: declared minutes versus lines, shifts and efficiency on site", method: "capa", base: 5, tech: ["cap"], review: ["capacity", "delay"], tags: ["capacity"] },
+  { id: "i2", label: `Line balancing observed at the bottleneck: ${x.bottleneck}`, method: "inline", base: 5, tech: ["cap", "proc"], review: ["capacity"], tags: ["process", "capacity"] },
+  { id: "i3", label: "Preventive maintenance plan executed on critical machines", method: "doc", base: 4, tech: ["maint"], review: ["breakdown"], tags: ["maint", "doc"] },
+  { id: "i4", label: "First-off approval and checks at critical stations", method: "inline", base: 4, tech: ["ctrl"], review: ["delay"], tags: ["process"] },
+  { id: "i5", label: "Order book versus capacity for the next 12 weeks", method: "doc", base: 4, tech: ["cap", "reg"], review: ["delay"], tags: ["planning", "capacity"] },
+  { id: "i6", label: "Unannounced visit to the declared subcontracted operations", method: "visit", base: 4, tech: ["sub"], review: ["outsourcing"], tags: ["visit", "subcontract"] },
+  { id: "i7", label: "Production plan and material call-off reliability", method: "doc", base: 4, tech: ["proc"], review: ["delay"], tags: ["planning", "doc"] },
+  { id: "i8", label: "Critical spare parts stock and mean time to repair", method: "capa", base: 3, tech: ["maint"], review: ["breakdown"], tags: ["maint"] },
+  { id: "i9", label: "Operator versatility matrix at the bottleneck stations", method: "inline", base: 3, tech: ["ctrl", "cap"], review: ["capacity"], tags: ["skills", "process"] },
+  { id: "i10", label: "Subcontractor capacity declared and matched to purchase orders", method: "doc", base: 3, tech: ["sub", "cap"], review: ["outsourcing"], tags: ["subcontract", "doc"] },
+  { id: "i11", label: "Night shift output and settings match the day shift", method: "visit", base: 3, tech: ["proc"], review: [], tags: ["visit", "process"] },
+  { id: "i12", label: "Corrective actions from the last industrial audit closed and verified", method: "doc", base: 3, tech: [], review: [], tags: ["doc", "process", "capacity"] },
+  { id: "i13", label: "Work in progress and flow between cutting and sewing", method: "inline", base: 3, tech: ["proc"], review: ["delay"], tags: ["planning", "process"] },
+  { id: "i14", label: "Machine guards and emergency stops checked", method: "doc", base: 3, tech: ["reg", "maint"], review: [], tags: ["doc", "maint"] },
+  { id: "i15", label: "Power back-up capacity for critical machines", method: "capa", base: 2, tech: ["maint"], review: ["breakdown"], tags: ["maint", "capacity"] },
+  { id: "i16", label: "On-time delivery measurement and shipment records", method: "doc", base: 2, tech: [], review: ["delay"], tags: ["planning", "doc"] },
+  { id: "i17", label: "Training records for new operators", method: "doc", base: 2, tech: ["ctrl"], review: [], tags: ["skills", "doc"] },
+  { id: "i18", label: "5S and visual management on the shop floor", method: "inline", base: 2, tech: ["std"], review: [], tags: ["process"] },
+  { id: "i19", label: "ISO 9001 certificate scope covers the audited site", method: "doc", base: 1, tech: ["reg"], review: [], tags: ["doc"] },
+  { id: "i20", label: "Packing and loading plan specification", method: "doc", base: 1, tech: [], review: [], tags: ["doc"] },
+];
+const QV_IND_PRODUCTS = {
+  p2: {
+    name: qvName("p2"), short: "Velour pyjamas", family: "textile", familyLabel: "Baby nightwear",
+    context: "Vertical velour site, from dyeing to making-up",
+    defaults: { country: "Portugal", late: "low", iso9: "certified", extras: ["iso45001", "lean"], kia: "strong", cap: "compliant" },
+    techPack: qvIndCards("Velour knitting, jet dyeing, stenter finishing, cutting, 8 sewing lines, sole-dot printing"),
+    reviews: [
+      { id: "delay", text: "Deliveries slip in the October peak", freq: "medium", sev: "minor", maps: ["cap", "proc"], quote: "Velour pyjama lots shipped one week late two seasons in a row." },
+      { id: "capacity", text: "Dyeing machines booked by several brands", freq: "medium", sev: "minor", maps: ["cap"], quote: "The jet dyeing slot for the pine green was postponed twice." },
+      { id: "breakdown", text: "Stenter breakdown stops finishing", freq: "rare", sev: "severe", maps: ["maint", "proc"], quote: "Stenter down for four days, no spare burner in stock." },
+      { id: "outsourcing", text: "Sole dots printed by a partner in the peak", freq: "rare", sev: "minor", maps: ["sub"], quote: "Sole dots go to a partner when the in-house machine is full." },
+    ],
+    pool: qvIndPool({ bottleneck: "jet dyeing and stenter" }),
+  },
+  p6: {
+    name: qvName("p6"), short: "Long-sleeved bodysuits", family: "textile", familyLabel: "Baby bodysuits",
+    context: "High-volume lines, snap setting bottleneck",
+    defaults: { country: "Bangladesh", late: "rising", iso9: "none", extras: [], kia: "improving", cap: "conditional" },
+    techPack: qvIndCards("Automatic cutting, 12 sewing lines, 6 snap presses, 3-pack packing"),
+    reviews: [
+      { id: "delay", text: "Bodysuit 3-packs shipped late and by air", freq: "frequent", sev: "severe", maps: ["cap", "proc"], quote: "Two of the last five lots missed the vessel and flew." },
+      { id: "capacity", text: "Declared minutes exceed real line output", freq: "medium", sev: "severe", maps: ["cap", "std"], quote: "Twelve lines declared, nine running on the day of the visit." },
+      { id: "breakdown", text: "Power cuts stop the snap presses", freq: "medium", sev: "minor", maps: ["maint"], quote: "Snap presses idle two hours a day during load shedding." },
+      { id: "outsourcing", text: "Snap setting sent out to meet shipment", freq: "medium", sev: "severe", maps: ["sub", "ctrl"], quote: "Snap setting is done in an outside unit when the order is late." },
+    ],
+    pool: qvIndPool({ bottleneck: "snap presses" }),
+  },
+  p9: {
+    name: qvName("p9"), short: "Lace-collar bodysuit", family: "textile", familyLabel: "Baby bodysuits",
+    context: "Small lines, hand lace-collar setting",
+    defaults: { country: "China", late: "spike", iso9: "expired", extras: [], kia: "improving", cap: "conditional" },
+    techPack: qvIndCards("Cutting, 4 sewing lines, hand lace-collar setting, 2 snap presses"),
+    reviews: [
+      { id: "delay", text: "Collar lots late after lace shortages", freq: "rare", sev: "minor", maps: ["proc", "cap"], quote: "Collars waited ten days for the lace trim delivery." },
+      { id: "capacity", text: "Hand collar setting limits the output", freq: "medium", sev: "minor", maps: ["cap", "proc"], quote: "Only six operators can set the lace collar at the right quality." },
+      { id: "breakdown", text: "Snap press misaligned after a move", freq: "rare", sev: "minor", maps: ["maint", "ctrl"], quote: "Back snaps misaligned after the press was moved and not recalibrated." },
+      { id: "outsourcing", text: "Collar setting sent to a family workshop", freq: "frequent", sev: "severe", maps: ["sub"], quote: "Lace collars are set in a small workshop across the street." },
+    ],
+    pool: qvIndPool({ bottleneck: "hand lace-collar setting" }),
+  },
+  p10: {
+    name: qvName("p10"), short: "'Minnie' bodysuits", family: "textile", familyLabel: "Baby licensed bodysuits",
+    context: "Licensed print and making-up, peak-season loading",
+    defaults: { country: "Vietnam", late: "degrading", iso9: "certified", extras: ["tpm"], kia: "worsening", cap: "worsening" },
+    techPack: qvIndCards("8 screen-print tables, 2 curing tunnels, cutting, 6 sewing lines, snap presses"),
+    reviews: [
+      { id: "delay", text: "Licensed orders delivered after the launch date", freq: "frequent", sev: "severe", maps: ["cap", "proc"], quote: "The 2-packs arrived three weeks after the store launch date." },
+      { id: "capacity", text: "Print tables overbooked", freq: "medium", sev: "severe", maps: ["cap"], quote: "Eight print tables for three licensed programmes in the same month." },
+      { id: "breakdown", text: "Curing tunnels without maintenance log", freq: "medium", sev: "minor", maps: ["maint"], quote: "The belt of tunnel 2 was replaced only after it broke." },
+      { id: "outsourcing", text: "Overflow printing at a partner print shop", freq: "rare", sev: "minor", maps: ["sub", "reg"], quote: "Overflow artwork printed by a partner shop during the peak." },
+    ],
+    pool: qvIndPool({ bottleneck: "print tables and curing tunnels" }),
+  },
+};
+
+/* ---------------------------------------------------------------- Audit type configurations */
+const QV_STAGE_NAMES = ["Reading the standard", "Clustering signals", "Profiling supplier", "Generating grid"];
+const qvSiteSub = (product, params) => `${params.country} site, simulated signal base`;
+const QV_AUDITS = {
+  social: {
+    label: "Social audit", icon: Users, kicker: "KIABI · Social Compliance · Vision 2027",
+    headline: "From one grid for everyone to mass precision: surgical social strikes.", uniformTotal: 212,
+    stages: QV_STAGE_NAMES, productLabel: "Product and supplier site", critKind: "Requirement",
+    stageA: { title: "Social standard intake", note: "Source: amfori BSCI code of conduct and the KIABI supplier charter. Requirements are read directly from the standard and applied to the site's processes." },
+    stageB: { title: "Social signals", sub: qvSiteSub }, stageC: { title: "Supplier profile and social risk score" }, scoreWord: "social risk score",
+    why: { tech: "standard", review: "signals", supplier: "supplier" },
+    traceText: "Every line traces to a standard requirement, a signal cluster or a supplier signal",
+    footer: "Vision demo. All suppliers, figures and signals are simulated and internally consistent; none refer to real partners.",
+    methods: QV_SOC_METHODS, countries: QV_SOC_COUNTRIES,
+    tagNames: { wages: "wage and payroll doubt", hours: "excessive hours risk", subcontract: "undeclared subcontracting risk", voice: "grievance channel weakness", doc: "records cannot be assumed", visit: "presence required", ohs: "health and safety exposure", remed: "open remediation" },
+    hist: { key: "grv", label: "Grievance and alert history", options: QV_SOC_GRIEVANCES, signalTitle: "Grievances and alerts", segLabel: "Grievances and alerts", blockTitle: "1 · Grievance and alert history", fmt: (c) => `${c} cases` },
+    cert: { key: "sa", label: "SA8000 status", options: QV_SOC_CERT }, extras: QV_SOC_EXTRAS,
+    audA: { key: "ksa", label: "Past social audits", options: QV_SOC_AUDITS, colTitle: "Social audits", prefix: "Social" },
+    audB: { key: "bsci", label: "Past amfori BSCI audits", options: QV_SOC_BSCI, colTitle: "amfori BSCI ratings", prefix: "BSCI", majorWord: "critical", fail: ["D", "E"] },
+    weights: { hist: 0.35, standards: 0.15, audits: 0.5 },
+    trapText: "SA8000 certified, yet the grievance history and both audit tracks are degrading. The certificate is discounted: it weighs 15 %, the evidence weighs 85 %.",
+    products: QV_SOC_PRODUCTS, initialProduct: "p9",
+  },
+  environmental: {
+    label: "Environmental audit", icon: Leaf, kicker: "KIABI · Environmental Compliance · Vision 2027",
+    headline: "From one grid for everyone to mass precision: surgical environmental strikes.", uniformTotal: 156,
+    stages: QV_STAGE_NAMES, productLabel: "Product and supplier site", critKind: "Requirement",
+    stageA: { title: "Environmental standard intake", note: "Source: ZDHC guidelines, the Higg FEM module and the site's discharge permit. Requirements are read directly from the standard and applied to the site's processes." },
+    stageB: { title: "Environmental signals", sub: qvSiteSub }, stageC: { title: "Supplier profile and environmental risk score" }, scoreWord: "environmental risk score",
+    why: { tech: "standard", review: "signals", supplier: "supplier" },
+    traceText: "Every line traces to a standard requirement, a signal cluster or a supplier signal",
+    footer: "Vision demo. All suppliers, figures and signals are simulated and internally consistent; none refer to real partners.",
+    methods: QV_ENV_METHODS, countries: QV_ENV_COUNTRIES,
+    tagNames: { chem: "chemical management gap", water: "wastewater risk", energy: "energy data doubt", doc: "records cannot be assumed", visit: "presence required", subcontract: "wet-processing subcontracting", lab: "test capability doubt", waste: "waste handling gap" },
+    hist: { key: "env", label: "Wastewater and chemical test history", options: QV_ENV_HISTORY, signalTitle: "Environmental incidents", segLabel: "Test history", blockTitle: "1 · Wastewater and chemical test history", fmt: (c) => `${c} fail${c === 1 ? "" : "s"}` },
+    cert: { key: "iso14", label: "ISO 14001 status", options: QV_ENV_CERT }, extras: QV_ENV_EXTRAS,
+    audA: { key: "kea", label: "Past environmental audits", options: QV_ENV_AUDITS, colTitle: "Environmental audits", prefix: "Environmental" },
+    audB: { key: "higg", label: "Past Higg FEM verifications", options: QV_ENV_HIGG, colTitle: "Higg FEM verifications", prefix: "Higg FEM", majorWord: (n) => (n === 1 ? "gap" : "gaps"), fail: ["Not verified"] },
+    weights: { hist: 0.35, standards: 0.25, audits: 0.4 },
+    trapText: "ISO 14001 certified, yet the test history and both audit tracks are degrading. The certificate is discounted: it weighs a quarter, the evidence weighs three quarters.",
+    products: QV_ENV_PRODUCTS, initialProduct: "p6",
+  },
+  industrial: {
+    label: "Industrial audit", icon: Factory, kicker: "KIABI · Industrial Performance · Vision 2027",
+    headline: "From one grid for everyone to mass precision: surgical industrial strikes.", uniformTotal: 168,
+    stages: QV_STAGE_NAMES, productLabel: "Product and supplier site", critKind: "Requirement",
+    stageA: { title: "Industrial standard intake", note: "Source: KIABI industrial requirements and the supplier's capacity declaration. Requirements are read directly from the standard and applied to the site's processes." },
+    stageB: { title: "Industrial signals", sub: qvSiteSub }, stageC: { title: "Supplier profile and industrial risk score" }, scoreWord: "industrial risk score",
+    why: { tech: "standard", review: "signals", supplier: "supplier" },
+    traceText: "Every line traces to a standard requirement, a signal cluster or a supplier signal",
+    footer: "Vision demo. All suppliers, figures and signals are simulated and internally consistent; none refer to real partners.",
+    methods: QV_IND_METHODS, countries: QV_IND_COUNTRIES,
+    tagNames: { capacity: "capacity strain", process: "process-control weakness", maint: "maintenance gap", doc: "documentation cannot be assumed", visit: "presence required", subcontract: "subcontracting risk", planning: "planning reliability doubt", skills: "skills gap" },
+    hist: { key: "late", label: "Late delivery history", options: QV_IND_DELIVERY, signalTitle: "Delivery performance", segLabel: "Late deliveries", blockTitle: "1 · Late delivery history", fmt: (c) => `${c} %` },
+    cert: { key: "iso9", label: "ISO 9001 status", options: QV_IND_CERT }, extras: QV_IND_EXTRAS,
+    audA: { key: "kia", label: "Past industrial audits", options: QV_IND_AUDITS, colTitle: "Industrial audits", prefix: "Industrial" },
+    audB: { key: "cap", label: "Past capacity verifications", options: QV_IND_CAPACITY, colTitle: "Capacity verifications", prefix: "Capacity", majorWord: "major", fail: ["Fail"] },
+    weights: { hist: 0.3, standards: 0.2, audits: 0.5 },
+    trapText: "ISO 9001 certified, yet the delivery history and both audit tracks are degrading. The certificate is discounted: it weighs one fifth, the evidence weighs four fifths.",
+    products: QV_IND_PRODUCTS, initialProduct: "p10",
+  },
+  quality: {
+    label: "Quality audit", icon: BadgeCheck, kicker: "KIABI · World Quality · Vision 2027",
+    headline: "From one grid for everyone to mass precision: surgical quality strikes.", uniformTotal: QV_UNIFORM_TOTAL,
+    stages: ["Extracting tech pack", "Clustering reviews", "Profiling supplier", "Generating grid"], productLabel: "Product tech pack", critKind: "Critical characteristic",
+    stageA: { title: "Tech pack intake", note: "Source: bill of materials generated by Cognyx. Materials, process and critical characteristics are read directly from the structured BOM." },
+    stageB: { title: "Customer reviews", sub: (product) => `${product.familyLabel}, simulated review base` }, stageC: { title: "Supplier profile and quality risk score" }, scoreWord: "quality risk score",
+    why: { tech: "tech pack", review: "reviews", supplier: "supplier" },
+    traceText: "Every line traces to a tech pack card, a review cluster or a supplier signal",
+    footer: "Vision demo. All suppliers, figures and reviews are simulated and internally consistent; none refer to real partners.",
+    methods: QV_METHODS, countries: QV_COUNTRIES,
+    tagNames: { process: "process-control weakness", inline: "in-line control gap", doc: "documentation cannot be assumed", visit: "presence required", subcontract: "subcontracting risk", lab: "lab capability doubt", final: "final-gate escapes" },
+    hist: { key: "nq", label: "Non-quality cost history", options: QV_NQ_COST, signalTitle: "Non-quality costs", segLabel: "Non-quality costs", blockTitle: "1 · Non-quality cost history", fmt: (c) => `€${c}k` },
+    cert: { key: "iso", label: "ISO 9001 status", options: QV_ISO }, extras: QV_EXTRA_STANDARDS,
+    audA: { key: "qa", label: "Past quality audits", options: QV_QUALITY_AUDITS, colTitle: "Quality audits", prefix: "Quality" },
+    audB: { key: "dpr", label: "Past DPR audits", options: QV_DPR_AUDITS, colTitle: "DPR audits", prefix: "DPR", majorWord: "major", fail: ["Fail"] },
+    weights: { hist: QV_SCORE_WEIGHTS.nq, standards: QV_SCORE_WEIGHTS.standards, audits: QV_SCORE_WEIGHTS.audits },
+    trapText: "ISO 9001 certified, yet the cost history and both audit tracks are degrading. The certificate is discounted: it weighs one fifth, the evidence weighs four fifths.",
+    products: QV_PRODUCTS, initialProduct: "p2",
+  },
+};
+/* Stable initial parameters per audit type (Reset goes back to them) */
+Object.values(QV_AUDITS).forEach((c) => { c.initial = { product: c.initialProduct, ...c.products[c.initialProduct].defaults }; });
+const QV_AUDIT_ORDER = ["social", "environmental", "industrial", "quality"];
+
+// ============================================================================
+// GENERATION ENGINE — deterministic, so every re-run is coherent
+// ============================================================================
+
+function qvRiskProfile(cfg, p) {
+  const nq = cfg.hist.options[p[cfg.hist.key]], iso = cfg.cert.options[p[cfg.cert.key]], qa = cfg.audA.options[p[cfg.audA.key]], dpr = cfg.audB.options[p[cfg.audB.key]];
+  const family = cfg.products[p.product].family;
+  const relief = p.extras.reduce((s, k) => {
+    const e = cfg.extras[k];
+    return s + (e.families && !e.families.includes(family) ? 0 : e.relief);
+  }, 0);
+  const standardsScore = Math.max(5, iso.score - relief);
+  const auditsScore = Math.round((qa.score + dpr.score) / 2);
+
+  const parts = {
+    nq: Math.round(nq.score * cfg.weights.hist),
+    standards: Math.round(standardsScore * cfg.weights.standards),
+    audits: Math.round(auditsScore * cfg.weights.audits),
+  };
+  const score = parts.nq + parts.standards + parts.audits;
+
+  const evidenceBad = nq.score >= 60 && qa.score >= 60 && dpr.score >= 60;
+  const trap = p[cfg.cert.key] === "certified" && evidenceBad;
+
+  const signals = [
+    { key: "nq", title: cfg.hist.signalTitle, text: nq.signal, sub: nq.score },
+    {
+      key: "standards", title: "Standards met",
+      text: trap
+        ? cfg.trapText
+        : iso.label + (p.extras.length ? ", plus " + p.extras.map((k) => cfg.extras[k].label).join(", ") : "") + (p[cfg.cert.key] === "certified" ? ". A documented system exists; it is a floor, not a guarantee." : ". Documentation and process discipline cannot be assumed."),
+      sub: standardsScore, trap,
+    },
+    { key: "audits", title: "Past KIABI audits", text: qa.signal + " " + dpr.signal, sub: auditsScore },
+  ];
+
+  const boosts = {};
+  for (const src of [cfg.countries[p.country].boosts, nq.boosts, iso.boosts, qa.boosts, dpr.boosts]) for (const k in src) boosts[k] = Math.max(boosts[k] || 0, src[k]);
+  const level = score >= 60 ? "High" : score >= 40 ? "Elevated" : "Moderate";
+  return { score, level, parts, signals, boosts, nq, qa, dpr, standardsScore, auditsScore, trap };
+}
+
+function qvTagName(cfg, t) {
+  return cfg.tagNames[t] || t;
+}
+
+function qvShortTech(cfg, t) {
+  return t.kind === cfg.critKind ? t.text.split(",")[0].toLowerCase() : t.kind.toLowerCase();
+}
+
+function qvGenerateGrid(cfg, product, profile) {
+  const p = cfg.products[product];
+  const reviewById = Object.fromEntries(p.reviews.map((r) => [r.id, r]));
+  const techById = Object.fromEntries(p.techPack.map((t) => [t.id, t]));
+  const scored = p.pool.map((cp) => {
+    let score = cp.base * 10;
+    for (const rid of cp.review) { const r = reviewById[rid]; score += QV_FREQ[r.freq] * QV_SEV[r.sev] * 2.2; }
+    const hits = [];
+    for (const tag of cp.tags) if (profile.boosts[tag]) { score += profile.boosts[tag] * 22; hits.push(tag); }
+    const why = [];
+    if (cp.tech.length) why.push(cfg.why.tech + ": " + cp.tech.map((t) => qvShortTech(cfg, techById[t])).join(", "));
+    if (cp.review.length) why.push(cfg.why.review + ": " + cp.review.map((r) => `"${reviewById[r].text.toLowerCase()}"`).join(", "));
+    if (hits.length) why.push(cfg.why.supplier + ": " + hits.map((t) => qvTagName(cfg, t)).join(", "));
+    return { ...cp, score, why: why.join(" — ") || "baseline control point" };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const n = 12 + Math.min(4, Math.round(profile.score / 22));
+  const max = scored[0].score;
+  return scored.slice(0, n).map((cp, i) => ({ ...cp, rank: i + 1, weight: Math.round((cp.score / max) * 100), strike: i < 5 }));
+}
+
+// ============================================================================
+// UI — Tailwind classes of the mock-up converted to inline styles
+// ============================================================================
+
+/* md: breakpoint of the mock-up (min-width 768px) */
+function useQvMd() {
+  const query = "(min-width: 768px)";
+  const [md, setMd] = useState(() => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(query).matches : true));
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const m = window.matchMedia(query);
+    const on = () => setMd(m.matches);
+    on();
+    if (m.addEventListener) m.addEventListener("change", on); else m.addListener(on);
+    return () => { if (m.removeEventListener) m.removeEventListener("change", on); else m.removeListener(on); };
+  }, []);
+  return md;
+}
+
+function QvCockpit({ cfg, autoRun = false }) {
+  const [params, setParams] = useState(cfg.initial);
+  const [stage, setStage] = useState(4);
+  const [running, setRunning] = useState(false);
+  const runId = useRef(0);
+  const first = useRef(true);
+  const md = useQvMd();
+
+  const profile = useMemo(() => qvRiskProfile(cfg, params), [cfg, params]);
+  const grid = useMemo(() => qvGenerateGrid(cfg, params.product, profile), [cfg, params.product, profile]);
+  const product = cfg.products[params.product];
+
+  const run = () => {
+    const id = ++runId.current;
+    setRunning(true);
+    setStage(0);
+    [1, 2, 3, 4].forEach((s, i) => setTimeout(() => { if (runId.current === id) { setStage(s); if (s === 4) setRunning(false); } }, 550 * (i + 1)));
+  };
+  /* a changed parameter re-runs the four stages; switching the audit type (autoRun) runs them on arrival */
+  useEffect(() => { if (first.current) { first.current = false; if (autoRun) run(); return; } run(); }, [params]);
+
+  const setProduct = (product) => setParams({ product, ...cfg.products[product].defaults });
+  const reset = () => setParams(cfg.initial);
+  const techById = Object.fromEntries(product.techPack.map((t) => [t.id, t]));
+  const btn = { display: "flex", alignItems: "center", gap: 6, ...QV_SM, padding: "6px 12px", borderRadius: 6, fontFamily: "inherit", cursor: "pointer" };
+  const card = { ...QV_XS, border: `1px solid ${QV_S[200]}`, borderRadius: 6, padding: "8px 12px" };
+
+  return (
+    <div style={{ background: "#ffffff", color: QV_S[900], fontFamily: QV_FONT }}>
+      <style>{"@keyframes qvPulse{50%{opacity:.5}}"}</style>
+      <header style={{ borderBottom: `1px solid ${QV_S[200]}` }}>
+        <div style={{ padding: "4px 0 20px", display: "flex", flexDirection: md ? "row" : "column", gap: 16, alignItems: md ? "flex-end" : "stretch", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ display: "inline-block", width: 28, height: 28, borderRadius: 4, background: QV_BLUE }} />
+              <span style={{ ...QV_SM, color: QV_S[500] }}>{cfg.kicker}</span>
+            </div>
+            <h1 style={{ margin: "8px 0 0", fontSize: md ? 30 : 24, lineHeight: 1.25, fontWeight: 600, letterSpacing: "-0.025em", color: QV_S[900] }}>
+              {cfg.headline}
+            </h1>
+            <p style={{ margin: "4px 0 0", ...QV_SM, color: QV_S[500] }}>Today, one grid of {cfg.uniformTotal} checkpoints for every supplier. Tomorrow, {grid.length} for this one.</p>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button onClick={run} disabled={running} style={{ ...btn, color: "#ffffff", background: QV_BLUE, border: "1px solid transparent", opacity: running ? 0.5 : 1, cursor: running ? "default" : "pointer" }}>
+              <Play size={14} /> Re-run
+            </button>
+            <button onClick={reset} style={{ ...btn, border: `1px solid ${QV_S[200]}`, color: QV_S[600], background: "#ffffff" }}>
+              <RotateCcw size={14} /> Reset
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main style={{ padding: "24px 0" }}>
+        <QvParamPanel cfg={cfg} params={params} setParams={setParams} setProduct={setProduct} product={product} md={md} />
+
+        {/* Pipeline flow */}
+        <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+          {cfg.stages.map((s, i) => {
+            const done = stage > i, active = running && stage === i;
+            return (
+              <div key={s} style={{ borderRadius: 6, padding: "8px 12px", ...QV_XS, borderWidth: 1, borderStyle: "solid", transition: "color .15s, background-color .15s, border-color .15s", ...(done ? { borderColor: "transparent", color: "#ffffff", background: QV_BLUE } : active ? { borderColor: QV_S[300], background: QV_S[50] } : { borderColor: QV_S[200], color: QV_S[400] }) }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontWeight: 500 }}>{["A", "B", "C", "D"][i]}</span>
+                  <span style={QV_TRUNC}>{active ? s + "…" : s}</span>
+                  {done && <Check size={12} style={{ marginLeft: "auto", flexShrink: 0 }} />}
+                  {active && <span style={{ marginLeft: "auto", width: 8, height: 8, borderRadius: 999, flexShrink: 0, background: QV_BLUE, animation: "qvPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite" }} />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: md ? "repeat(3, minmax(0, 1fr))" : "minmax(0, 1fr)", gap: 16 }}>
+          {/* Stage A */}
+          <QvStageCard letter="A" title={cfg.stageA.title} sub={product.name} state={qvStageState(stage, running, 0)}>
+            <div style={{ marginBottom: 12, ...QV_XS, borderLeft: `2px solid ${QV_BLUE}`, paddingLeft: 8, color: QV_S[600] }}>
+              {cfg.stageA.note}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {product.techPack.map((t) => (
+                <div key={t.id} style={card}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: QV_S[500] }}><span>{t.kind}</span><span style={QV_TAB}>{Math.round(t.conf * 100)}% confidence</span></div>
+                  <div style={{ marginTop: 2, color: QV_S[800] }}>{t.text}</div>
+                  <div style={{ marginTop: 6, height: 4, background: QV_S[100], borderRadius: 4 }}><div style={{ height: 4, borderRadius: 4, width: `${t.conf * 100}%`, background: QV_BLUE }} /></div>
+                </div>
+              ))}
+            </div>
+          </QvStageCard>
+
+          {/* Stage B */}
+          <QvStageCard letter="B" title={cfg.stageB.title} sub={cfg.stageB.sub(product, params)} state={qvStageState(stage, running, 1)}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {product.reviews.map((r) => (
+                <div key={r.id} style={card}>
+                  <div style={{ color: QV_S[800], fontWeight: 500 }}>{r.text}</div>
+                  <div style={{ marginTop: 4, display: "flex", gap: 8 }}><QvPill>{r.freq}</QvPill><QvPill dark={r.sev === "severe"}>{r.sev}</QvPill></div>
+                  <div style={{ marginTop: 6, color: QV_S[500], fontStyle: "italic" }}>“{r.quote}”</div>
+                  <div style={{ marginTop: 6, color: QV_S[500] }}>Implicates: {r.maps.map((m) => qvShortTech(cfg, techById[m])).join(", ")}</div>
+                </div>
+              ))}
+            </div>
+          </QvStageCard>
+
+          {/* Stage C */}
+          <QvStageCard letter="C" title={cfg.stageC.title} sub={`${params.country} · ${product.context}`} state={qvStageState(stage, running, 2)}>
+            <QvSupplierProfile cfg={cfg} params={params} profile={profile} />
+          </QvStageCard>
+        </div>
+
+        {/* Stage D — hero */}
+        <div style={{ marginTop: 24 }}>
+          <QvStageCard letter="D" title="The tailored grid" sub={`${grid.length} checkpoints instead of ${cfg.uniformTotal}, ranked by ${cfg.scoreWord} ${profile.score}`} state={qvStageState(stage, running, 3)} wide hero>
+            {md && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 12, ...QV_XS, color: QV_S[400], paddingBottom: 8, borderBottom: `1px solid ${QV_S[100]}`, paddingLeft: 15 }}>
+                <div style={{ gridColumn: "span 1 / span 1" }}>Rank</div><div style={{ gridColumn: "span 6 / span 6" }}>Checkpoint and why it is here</div><div style={{ gridColumn: "span 2 / span 2" }}>Method</div><div style={{ gridColumn: "span 3 / span 3", textAlign: "right" }}>Weight</div>
+              </div>
+            )}
+            <div>
+              {grid.map((cp, i) => (
+                <div key={cp.id} style={{ paddingTop: 10, paddingBottom: 10, display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 12, alignItems: "start", borderTop: i ? `1px solid ${QV_S[100]}` : "none", ...(cp.strike ? { boxShadow: `inset 3px 0 0 ${QV_BLUE}`, paddingLeft: 12 } : { paddingLeft: 15 }) }}>
+                  <div style={{ gridColumn: "span 1 / span 1", ...QV_SM, ...QV_TAB, color: QV_S[400], paddingTop: 2 }}>{cp.rank}</div>
+                  <div style={{ gridColumn: md ? "span 6 / span 6" : "span 11 / span 11" }}>
+                    <div style={{ ...QV_SM, color: QV_S[900] }}>{cp.label}{cp.strike && <span style={{ marginLeft: 8, ...QV_XS, fontWeight: 500, color: QV_BLUE }}>surgical strike</span>}</div>
+                    <div style={{ marginTop: 2, ...QV_XS, color: QV_S[500] }}>{cp.why}</div>
+                    {!md && <div style={{ marginTop: 4, ...QV_XS, color: QV_S[500] }}>{cfg.methods[cp.method].label} · weight {cp.weight}</div>}
+                  </div>
+                  {md && <div style={{ gridColumn: "span 2 / span 2", ...QV_XS, color: QV_S[600], paddingTop: 2 }}>{cfg.methods[cp.method].label}</div>}
+                  {md && <div style={{ gridColumn: "span 2 / span 2", paddingTop: 6 }}><div style={{ height: 6, background: QV_S[100], borderRadius: 4 }}><div style={{ height: 6, borderRadius: 4, width: `${cp.weight}%`, background: cp.strike ? QV_BLUE : QV_S[400] }} /></div></div>}
+                  {md && <div style={{ gridColumn: "span 1 / span 1", ...QV_XS, ...QV_TAB, color: QV_S[600], paddingTop: 2, textAlign: "right" }}>{cp.weight}</div>}
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${QV_S[100]}`, display: "flex", flexWrap: "wrap", columnGap: 24, rowGap: 4, ...QV_XS, color: QV_S[500] }}>
+              <span>{cfg.uniformTotal - grid.length} uniform checkpoints not applied to this case</span>
+              <span>5 surgical strikes concentrate the audit effort</span>
+              <span>{cfg.traceText}</span>
+            </div>
+          </QvStageCard>
+        </div>
+      </main>
+
+      <footer style={{ ...QV_XS, color: QV_S[400] }}>
+        {cfg.footer}
+      </footer>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- Stage C detail
+function QvSupplierProfile({ cfg, params, profile }) {
+  const { nq, qa, dpr, parts } = profile;
+  const segs = [
+    { k: "nq", label: cfg.hist.segLabel, w: cfg.weights.hist, v: parts.nq, color: QV_BLUE_DARK },
+    { k: "standards", label: "Standards", w: cfg.weights.standards, v: parts.standards, color: "#7fbfe0" },
+    { k: "audits", label: "KIABI audits", w: cfg.weights.audits, v: parts.audits, color: QV_BLUE },
+  ];
+  const maxCost = Math.max(1, ...nq.costs);
+  const majorWord = (n) => (typeof cfg.audB.majorWord === "function" ? cfg.audB.majorWord(n) : cfg.audB.majorWord);
+  return (
+    <div style={QV_XS}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 30, lineHeight: "36px", fontWeight: 600, ...QV_TAB }}>{profile.score}</span>
+        <span style={{ ...QV_SM, color: QV_S[600] }}>{cfg.scoreWord} · {profile.level}</span>
+      </div>
+      <div style={{ marginTop: 8, display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: QV_S[100] }}>
+        {segs.map((s) => <div key={s.k} style={{ width: `${s.v}%`, background: s.color }} title={s.label} />)}
+      </div>
+      <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+        {segs.map((s) => (
+          <div key={s.k}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, background: s.color }} /><span style={{ color: QV_S[600] }}>{s.label}</span></div>
+            <div style={{ color: QV_S[800], ...QV_TAB, fontWeight: 500 }}>+{s.v} <span style={{ color: QV_S[400], fontWeight: 400 }}>of {Math.round(s.w * 100)}</span></div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 12, color: QV_S[500] }}>{cfg.countries[params.country].note}</div>
+
+      {/* Input 1 */}
+      <QvBlock title={cfg.hist.blockTitle} value={`${nq.trend} · ${nq.type}`} contribution={parts.nq}>
+        {nq.costs.length > 0 && (
+          <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "flex-end", height: 48 }}>
+            {nq.costs.map((c, i) => (
+              <div key={i} style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center" }}>
+                <span style={{ color: QV_S[600], ...QV_TAB }}>{cfg.hist.fmt(c)}</span>
+                <div style={{ width: "100%", borderRadius: 4, height: `${Math.max(6, (c / maxCost) * 32)}px`, background: QV_BLUE_DARK }} />
+                <span style={{ color: QV_S[400] }}>Y-{3 - i}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ marginTop: 6, color: QV_S[600] }}>{profile.signals[0].text}</div>
+      </QvBlock>
+
+      {/* Input 2 */}
+      <QvBlock title="2 · Standards met" value={cfg.cert.options[params[cfg.cert.key]].label} contribution={parts.standards} trap={profile.trap}>
+        <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {params.extras.map((k) => <QvPill key={k}>{cfg.extras[k].label}</QvPill>)}
+          {params.extras.length === 0 && <span style={{ color: QV_S[400] }}>No additional standard</span>}
+        </div>
+        <div style={{ marginTop: 6, ...(profile.trap ? { color: QV_S[900], borderLeft: `2px solid ${QV_BLUE}`, paddingLeft: 8 } : { color: QV_S[600] }) }}>{profile.signals[1].text}</div>
+      </QvBlock>
+
+      {/* Input 3 */}
+      <QvBlock title="3 · Past KIABI audits" value={`${cfg.audA.prefix} ${qa.scores.length ? qa.scores.join(" / ") : "none"} · ${cfg.audB.prefix} ${dpr.results.length ? dpr.results.join(" / ") : "none"}`} contribution={parts.audits}>
+        <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+          <div>
+            <div style={{ color: QV_S[500] }}>{cfg.audA.colTitle}</div>
+            {qa.scores.length ? qa.scores.map((s, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", borderBottom: `1px solid ${QV_S[100]}`, padding: "2px 0" }}><span style={{ ...QV_TAB, fontWeight: 500 }}>{s}</span><span style={{ color: QV_S[500], marginLeft: 8, ...QV_TRUNC }}>{qa.findings[i]}</span></div>
+            )) : <div style={{ color: QV_S[400] }}>No record</div>}
+          </div>
+          <div>
+            <div style={{ color: QV_S[500] }}>{cfg.audB.colTitle}</div>
+            {dpr.results.length ? dpr.results.map((r, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", borderBottom: `1px solid ${QV_S[100]}`, padding: "2px 0" }}><span style={{ fontWeight: 500, ...(cfg.audB.fail.includes(r) ? { color: QV_S[900] } : {}) }}>{r}</span><span style={{ color: QV_S[500], marginLeft: 8 }}>{dpr.majors[i]} {majorWord(dpr.majors[i])}</span></div>
+            )) : <div style={{ color: QV_S[400] }}>No record</div>}
+          </div>
+        </div>
+        <div style={{ marginTop: 6, color: QV_S[600] }}>{profile.signals[2].text}</div>
+      </QvBlock>
+    </div>
+  );
+}
+
+function QvBlock({ title, value, contribution, children }) {
+  return (
+    <div style={{ marginTop: 12, border: `1px solid ${QV_S[200]}`, borderRadius: 6, padding: "8px 12px" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontWeight: 500, color: QV_S[800] }}>{title}</span>
+        <span style={{ ...QV_TAB, flexShrink: 0, color: QV_BLUE }}>+{contribution} to score</span>
+      </div>
+      <div style={{ color: QV_S[600] }}>{value}</div>
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Shared
+function qvStageState(stage, running, i) { return stage > i ? "done" : running && stage === i ? "active" : "waiting"; }
+
+function QvStageCard({ letter, title, sub, state, children, wide, hero }) {
+  const done = state === "done";
+  return (
+    <section style={{ minWidth: 0, borderRadius: 6, borderWidth: hero ? 2 : 1, borderStyle: done ? "solid" : "dashed", borderColor: hero && done ? QV_BLUE : QV_S[200] }}>
+      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${QV_S[100]}`, display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 4, color: "#ffffff", ...QV_XS, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 500, background: done ? QV_BLUE : QV_S[400] }}>{letter}</span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ ...QV_SM, fontWeight: 500 }}>{title}</div>
+          <div style={{ ...QV_XS, color: QV_S[500], ...QV_TRUNC }}>{sub}</div>
+        </div>
+      </div>
+      <div style={{ padding: 16, transition: "opacity .3s", opacity: done ? 1 : 0.3, ...(wide ? {} : { overflowY: "auto", maxHeight: 640 }) }}>
+        {state === "waiting" && !wide ? <div style={{ ...QV_XS, color: QV_S[400] }}>Waiting for the previous stage.</div> : children}
+      </div>
+    </section>
+  );
+}
+
+function QvParamPanel({ cfg, params, setParams, setProduct, product, md }) {
+  const sel = { display: "block", width: "100%", boxSizing: "border-box", marginTop: 4, ...QV_SM, border: `1px solid ${QV_S[200]}`, borderRadius: 6, padding: "6px 8px", background: "#ffffff", color: QV_S[900], fontFamily: "inherit", outline: "none" };
+  const lbl = { ...QV_XS, color: QV_S[600] };
+  const set = (k) => (e) => setParams({ ...params, [k]: e.target.value });
+  const toggleExtra = (k) => setParams({ ...params, extras: params.extras.includes(k) ? params.extras.filter((x) => x !== k) : [...params.extras, k] });
+  const pick = (input) => (
+    <label style={lbl}>{input.label}
+      <select style={sel} value={params[input.key]} onChange={set(input.key)}>
+        {Object.entries(input.options).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+      </select>
+    </label>
+  );
+  return (
+    <div style={{ background: QV_S[50], border: `1px solid ${QV_S[200]}`, borderRadius: 6, padding: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: md ? "repeat(3, minmax(0, 1fr))" : "minmax(0, 1fr)", gap: 12 }}>
+        <label style={lbl}>{cfg.productLabel}
+          <select style={sel} value={params.product} onChange={(e) => setProduct(e.target.value)}>
+            {Object.entries(cfg.products).map(([k, p]) => <option key={k} value={k}>{p.name}</option>)}
+          </select>
+        </label>
+        <label style={lbl}>Supplier country
+          <select style={sel} value={params.country} onChange={set("country")}>
+            {Object.keys(cfg.countries).map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </label>
+        {pick(cfg.hist)}
+        {pick(cfg.cert)}
+        {pick(cfg.audA)}
+        {pick(cfg.audB)}
+      </div>
+      <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, ...QV_XS, color: QV_S[600] }}>
+        <span>Other standards met:</span>
+        {Object.entries(cfg.extras).map(([k, e]) => {
+          const on = params.extras.includes(k);
+          const relevant = !e.families || e.families.includes(product.family);
+          return (
+            <button key={k} onClick={() => toggleExtra(k)} style={{ padding: "4px 8px", borderRadius: 6, ...QV_XS, fontFamily: "inherit", cursor: "pointer", ...(on ? { color: "#ffffff", border: "1px solid transparent", background: QV_BLUE } : { border: `1px solid ${QV_S[200]}`, background: "#ffffff", color: QV_S[600] }) }} title={relevant ? "" : "Not relevant to this product family: no effect on the score"}>
+              {e.label}{!relevant && on ? " (no effect)" : ""}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function QvPill({ children, dark }) {
+  return <span style={{ padding: "2px 6px", borderRadius: 4, ...QV_XS, ...(dark ? { background: QV_S[800], color: "#ffffff" } : { background: QV_S[100], color: QV_S[600] }) }}>{children}</span>;
+}
+
+/* Supplier compliance section of the KFI tab: one audit type at a time */
+function SupplierCompliance() {
+  const [type, setType] = useState("quality");
+  const [switched, setSwitched] = useState(false);
+  return (
+    <CollapsibleSection title="Supplier compliance" icon={ShieldCheck} sub="tailored audit grid for one product and one supplier — social, environmental, industrial and quality audits">
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, letterSpacing: 0.6, textTransform: "uppercase" }}>Audit type</span>
+        {QV_AUDIT_ORDER.map((id) => {
+          const a = QV_AUDITS[id], on = type === id;
+          return (
+            <button key={id} onClick={() => { if (!on) { setType(id); setSwitched(true); } }} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: on ? T.human : T.panel2, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 999, padding: "8px 15px", fontSize: 12, fontWeight: 700, fontFamily: SANS }}>
+              <a.icon size={13} /> {a.label}
+            </button>
+          );
+        })}
+      </div>
+      <QvCockpit key={type} cfg={QV_AUDITS[type]} autoRun={switched} />
+    </CollapsibleSection>
   );
 }
 
@@ -2309,8 +3550,8 @@ function ProductionPage({ st }) {
       </div>
 
       {/* ---- Panel performance — trajectory ---- */}
-      <div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, marginBottom: 10 }}>Panel performance — trajectory</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 12, marginBottom: 18 }}>
+      <CollapsibleSection title="Panel performance — trajectory" icon={TrendingUp}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 12 }}>
         {KPI_TRAJ.map((k) => (
           <div key={k.t} style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 13, padding: "14px 16px", boxShadow: "0 1px 4px rgba(0,83,160,.06)" }}>
             <div style={{ display: "flex", alignItems: "center" }}>
@@ -2335,17 +3576,14 @@ function ProductionPage({ st }) {
           </div>
         ))}
       </div>
+      </CollapsibleSection>
 
       {/* ---- Partner business plans × in-season forecasts (RELEX) ---- */}
       <KfiReconciliation st={st} />
 
       {/* ---- Supplier panel, followed by "Act now" and "Decisions to make" ---- */}
-      <div style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 14, padding: 18, boxShadow: "0 1px 4px rgba(0,83,160,.06)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          <TrendingUp size={15} color={T.accent} /><span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>Supplier panel</span>
-          <span style={{ fontSize: 11.5, color: T.faint }}>{PROD_SUPPLIERS.length} suppliers tracked · click for field details</span>
-          <span style={{ marginLeft: "auto" }}><Chip color={T.warn}>{auditsTodo} audit{auditsTodo > 1 ? "s" : ""} to finalise</Chip></span>
-        </div>
+      <CollapsibleSection title="Supplier panel" icon={TrendingUp} sub={`${PROD_SUPPLIERS.length} suppliers tracked · click for field details`}
+        right={<span style={{ marginLeft: "auto" }}><Chip color={T.warn}>{auditsTodo} audit{auditsTodo > 1 ? "s" : ""} to finalise</Chip></span>}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead><tr>{["Supplier", "Country", "Status", "Audit", "Score", "2027 price"].map((c, j) => (
@@ -2411,7 +3649,10 @@ function ProductionPage({ st }) {
             </div>
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
+
+      {/* ---- Supplier compliance: tailored audit grids (Quality Vision) ---- */}
+      <SupplierCompliance />
     </div>
   );
 }
@@ -2689,12 +3930,11 @@ function OfferBreakdown({ glob, dept, validated, validatedAt }) {
   const num = { ...td, textAlign: "right", fontFamily: MONO, color: T.sub };
   const box = { background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 13px" };
   return (
-    <div style={{ marginTop: 16, borderTop: `1px solid ${T.lineSoft}`, paddingTop: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-        <ShoppingBag size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{BUDGET_OFFERS_DEPT} — offer breakdown</span>
+    <CollapsibleSection nested title={`${BUDGET_OFFERS_DEPT} — offer breakdown`} icon={ShoppingBag}
+      right={<>
         {validated ? <Chip color={T.ok}>Global budget validated · {validatedAt}</Chip> : <Chip color={T.warn}>Validation required</Chip>}
         <span style={{ marginLeft: "auto", fontSize: 10.5, color: T.faint, fontFamily: MONO }}>{BUDGET_OFFERS.length} offers · tolerance {OFFER_TOL.budgetPct} % budget · {fr1(OFFER_TOL.ratePts)} pts rates · {fr2(OFFER_TOL.pvmEur)} € price</span>
-      </div>
+      </>}>
       {!validated ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: T.panel2, border: `1px dashed ${T.line}`, borderRadius: 11, padding: "14px 16px" }}>
           <Scale size={16} color={T.faint} />
@@ -2777,7 +4017,7 @@ function OfferBreakdown({ glob, dept, validated, validatedAt }) {
           </div>
         );
       })()}
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -2975,7 +4215,9 @@ function BudgetPage({ st, fw }) {
         desc="Kiabi's annual budget framing in three steps: set the global budget, break it down by department and arbitrate the submissions. Monthly steering lives in the Monitoring tab."
         expert={{ role: "Performance Leader", txt: "Frames the envelopes, arbitrates the departments' submissions and orchestrates Group steering." }}
       />
-      <BudgetModule fw={fw} />
+      <CollapsibleSection title="Budget module — fiscal year Sept. 2026 → Aug. 2027" icon={Wallet} sub="three steps: global budget · breakdown by department · submissions & arbitration">
+        <BudgetModule fw={fw} />
+      </CollapsibleSection>
     </div>
   );
 }
@@ -3194,7 +4436,9 @@ function CO2Page({ fw }) {
         desc="Kiabi's annual carbon framing in three steps: set the global CO₂ budget, break it down by department and arbitrate the submissions. Monthly emissions steering lives in the Monitoring tab."
         expert={{ role: "Performance Leader", txt: "Frames the carbon envelope, arbitrates the departments' submissions and steers the Group CO₂ trajectory." }}
       />
-      <CO2Module fw={fw} />
+      <CollapsibleSection title="CO₂ module — fiscal year Sept. 2026 → Aug. 2027" icon={Leaf} iconColor={G} accent={G} sub="three steps: global CO₂ budget · breakdown by department · submissions & arbitration">
+        <CO2Module fw={fw} />
+      </CollapsibleSection>
     </div>
   );
 }
@@ -3258,12 +4502,11 @@ function FinancialMonitoring({ glob, depts, scope }) {
   const mLabel = { ca: "Cumulative revenue (M€)", dem: "Weighted markdown (%)", tmv: "Weighted TMV (%)" };
 
   return (
-    <div style={cardB}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-        <TrendingUp size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Financial monitoring — {scope ? scope.label : "monitoring agent"}</span>
+    <CollapsibleSection title={`Financial monitoring — ${scope ? scope.label : "monitoring agent"}`} icon={TrendingUp}
+      right={<>
         <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(glob.budget)} M€ · {depts.length} {scope ? scope.lines : "departments"} from the {scope ? scope.source : "Financial Framework"}</span>
         <ResetBtn onClick={() => setMonth(0)} />
-      </div>
+      </>}>
       <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actuals by {scope ? scope.line.toLowerCase() : "department"} vs phased budget trajectory (Christmas peaks, January and July sales, back-to-school). Green ≤ 2 pts · orange 2 – 4 pts · red &gt; 4 pts.</div>
       <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -3339,7 +4582,7 @@ function FinancialMonitoring({ glob, depts, scope }) {
           <div style={{ fontSize: 11.5, color: T.sub, marginTop: 5, lineHeight: 1.5 }}>Weighted projected TMV <strong style={{ color: T.ink }}>{fr1(projTmv)} %</strong> vs {fr1(glob.tmv)} % budgeted ({projTmv - glob.tmv > 0 ? "+" : "−"}{fr1(Math.abs(projTmv - glob.tmv))} pt). {mon.filter((x) => x.status === "rouge").length ? `${mon.filter((x) => x.status === "rouge").map((x) => x.d.n).join(", ")} carries most of the gap.` : "No department off track."}</div>
         </div>
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -3377,12 +4620,11 @@ function CO2Monitoring({ glob, depts, scope }) {
   const ticks = [0, 1, 2, 3, 4].map((i) => (yMax * i) / 4);
 
   return (
-    <div style={cardG}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-        <TrendingUp size={15} color={G} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>CO₂ monitoring — {scope ? scope.label : "monitoring agent"}</span>
+    <CollapsibleSection title={`CO₂ monitoring — ${scope ? scope.label : "monitoring agent"}`} icon={TrendingUp} iconColor={G} accent={G}
+      right={<>
         <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(Math.round(glob.budget))} t CO₂e · {depts.length} {scope ? scope.lines : "departments"} from the {scope ? scope.co2Source : "CO₂ Framework"}</span>
         <ResetBtn onClick={() => setMonth(0)} />
-      </div>
+      </>}>
       <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actual emissions vs phased trajectory (production peaks before Christmas and before the sales). Green ≤ 2 % · orange 2 – 4 % · red &gt; 4 % cumulative.</div>
       <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -3452,7 +4694,7 @@ function CO2Monitoring({ glob, depts, scope }) {
           <div style={{ fontSize: 11.5, color: T.sub, marginTop: 8, lineHeight: 1.5 }}>Cumulative potential <strong style={{ color: T.ink }}>−{u(Math.round(leviersTot))} t</strong>: {projGap > 0 ? (leviersTot >= projGap ? "sufficient to return within the envelope." : `insufficient, ${u(Math.round(projGap - leviersTot))} t would remain to be arbitrated.`) : "the trajectory is already below the envelope; the levers provide a safety margin."}</div>
         </div>
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -3569,11 +4811,7 @@ function OntologyPage({ st, ontology, setOntology }) {
       </div>
 
       {/* Graph */}
-      <div style={cardB}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-          <Network size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{domain} — object graph</span>
-          <span style={{ fontSize: 11.5, color: T.faint }}>{domainObjs.length} domain objects, {nodes.length - domainObjs.length} linked objects from other domains (dashed) · click a node</span>
-        </div>
+      <CollapsibleSection title={`${domain} — object graph`} icon={Network} sub={`${domainObjs.length} domain objects, ${nodes.length - domainObjs.length} linked objects from other domains (dashed) · click a node`}>
         <div style={{ overflowX: "auto" }}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 520, height: "auto", display: "block", maxHeight: 420 }}>
           {domainRels.map((r) => {
@@ -3608,12 +4846,11 @@ function OntologyPage({ st, ontology, setOntology }) {
             <div style={{ fontSize: 11, color: T.sub, marginTop: 6 }}>{selRels.length ? selRels.map((r) => <span key={r.id} style={{ display: "inline-block", marginRight: 10 }}><strong style={{ color: T.ink }}>{byId(r.source)?.name}</strong> {r.verb} <strong style={{ color: T.ink }}>{byId(r.target)?.name}</strong></span>) : "no relation yet"}</div>
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16, alignItems: "start" }}>
         {/* Objects */}
-        <div style={{ ...cardB, marginBottom: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><Boxes size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Objects</span><span style={{ fontSize: 11, color: T.faint }}>{domain}</span></div>
+        <CollapsibleSection title="Objects" icon={Boxes} sub={domain} style={{ marginBottom: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
             {domainObjs.map((o) => (
               <button key={o.id} onClick={() => setSelected(selected === o.id ? null : o.id)} style={{ textAlign: "left", cursor: "pointer", background: selected === o.id ? `${ONTOLOGY_TYPE_C[o.type]}12` : T.panel2, border: `1px solid ${selected === o.id ? ONTOLOGY_TYPE_C[o.type] : T.line}`, borderRadius: 9, padding: "8px 10px", fontFamily: SANS }}>
@@ -3630,11 +4867,10 @@ function OntologyPage({ st, ontology, setOntology }) {
           </div>
           <input value={objForm.desc} onChange={(e) => setObjForm({ ...objForm, desc: e.target.value })} placeholder="Short description" style={{ ...inputSt, width: "100%", boxSizing: "border-box", marginBottom: 8 }} />
           <button onClick={addObject} disabled={!objForm.name.trim()} style={addBtn(!!objForm.name.trim())}><Check size={12} /> Add object</button>
-        </div>
+        </CollapsibleSection>
 
         {/* Relations */}
-        <div style={{ ...cardB, marginBottom: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><GitBranch size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Relations</span><span style={{ fontSize: 11, color: T.faint }}>{domainRels.length} involving {domain}</span></div>
+        <CollapsibleSection title="Relations" icon={GitBranch} sub={`${domainRels.length} involving ${domain}`} style={{ marginBottom: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
             {domainRels.map((r) => (
               <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 11.5, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 9, padding: "7px 10px" }}>
@@ -3653,11 +4889,10 @@ function OntologyPage({ st, ontology, setOntology }) {
             <select value={relForm.target} onChange={(e) => setRelForm({ ...relForm, target: e.target.value })} style={selSt}><option value="">Target object…</option>{objects.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.domain})</option>)}</select>
           </div>
           <button onClick={addRelation} disabled={!relForm.source || !relForm.target || relForm.source === relForm.target || !relForm.verb.trim()} style={addBtn(relForm.source && relForm.target && relForm.source !== relForm.target && relForm.verb.trim())}><Check size={12} /> Add relation</button>
-        </div>
+        </CollapsibleSection>
 
         {/* Business rules */}
-        <div style={{ ...cardB, marginBottom: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><ShieldCheck size={15} color={T.warn} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Business rules</span><span style={{ fontSize: 11, color: T.faint }}>{domainRules.length} in {domain}</span></div>
+        <CollapsibleSection title="Business rules" icon={ShieldCheck} iconColor={T.warn} sub={`${domainRules.length} in ${domain}`} style={{ marginBottom: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
             {domainRules.map((r) => (
               <div key={r.id} style={{ background: T.panel2, border: `1px dashed ${r.status === "Active" ? T.warn : T.line}`, borderRadius: 9, padding: "8px 10px" }}>
@@ -3683,7 +4918,7 @@ function OntologyPage({ st, ontology, setOntology }) {
           </div>
           <input value={ruleForm.txt} onChange={(e) => setRuleForm({ ...ruleForm, txt: e.target.value })} placeholder="Readable rule (e.g. every offer must keep TMV above 48 %)" style={{ ...inputSt, width: "100%", boxSizing: "border-box", marginBottom: 8 }} />
           <button onClick={addRule} disabled={!ruleForm.name.trim() || !ruleForm.source || !ruleForm.target} style={addBtn(ruleForm.name.trim() && ruleForm.source && ruleForm.target)}><Check size={12} /> Add rule</button>
-        </div>
+        </CollapsibleSection>
       </div>
     </div>
   );
@@ -3813,9 +5048,8 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
   const sgn = (n, d = 0) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
   const kunits = (n) => `${u(Math.round(n / 1000))} k`;
   return (
-    <div style={cardB}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-        <Globe2 size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{title}</span>
+    <CollapsibleSection title={title} icon={Globe2}
+      right={<>
         {scopeLabel && <Chip color={T.human}>{scopeLabel} · {offers.length} offers</Chip>}
         <Chip color={T.warn}>{data.source}</Chip>
         <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>last submission {data.lastSubmission} · {r.submitted} / {r.countries.length} countries submitted</span>
@@ -3823,8 +5057,8 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
           <option value="ALL">All countries</option>
           {data.countries.map((c) => <option key={c.countryCode} value={c.countryCode}>{c.countryName} ({c.storeCount} stores)</option>)}
         </select>
-      </div>
-      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>The offer is pushed top-down by the Product, Market and Collection Managers; each country's stores submit their needs bottom-up. Gaps are computed from the simulated submissions: volume tolerance ±{STORE_TOL.volumePct} %, price tolerance ±{STORE_TOL.pricePct} %.</div>
+      </>}>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>The offer is pushed top-down by the Product and Market Managers; each country's stores submit their needs bottom-up. Gaps are computed from the simulated submissions: volume tolerance ±{STORE_TOL.volumePct} %, price tolerance ±{STORE_TOL.pricePct} %.</div>
 
       {/* 50/50 KPI */}
       <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 13px", marginBottom: 14 }}>
@@ -3908,7 +5142,7 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
         </div>
       )}
       <div style={{ fontSize: 10.5, color: T.faint, marginTop: 10 }}>Provenance: {data.source} — not real orders. Requested value = requested volume × requested price; pushed price = offer average selling price from the Financial Framework.</div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -3968,7 +5202,7 @@ function MonitoringPage({ fw, views = ["financial", "co2"], initial, scope = "gr
   const HEADERS = {
     group: { desc: "Single annual follow-up of the fiscal year: financial and CO₂ trajectories month by month, fed live by the Financial Framework and CO₂ Framework, plus the store submissions confrontation.", expert: { role: "Performance Leader", txt: "Monitors actuals against the phased frameworks, raises alerts and projects the year-end for the Group." } },
     market: { desc: "Market follow-up of the fiscal year: revenue, markdown, TMV and CO₂ trajectories of the Offers & Collections market, offer by offer, plus the store submissions of every country.", expert: { role: "Market Manager", txt: "Steers the market's offers against the Offers & Collections line of the Financial and CO₂ Frameworks — never the Group figures." } },
-    collection: { desc: "Collection follow-up of the fiscal year: revenue, markdown, TMV and CO₂ trajectories of one collection, offer by offer, plus the store submissions received for that collection.", expert: { role: "Collection Manager", txt: "Steers a single collection against its offer breakdown from the Financial Framework and the country submissions received for its offers." } },
+    collection: { desc: "Collection follow-up of the fiscal year: revenue, markdown, TMV and CO₂ trajectories of one collection, offer by offer, plus the store submissions received for that collection.", expert: { role: "Market Manager", txt: "Steers a single collection of the market against its offer breakdown from the Financial Framework and the country submissions received for its offers." } },
   };
   const hd = HEADERS[sc ? sc.kind : "group"];
   return (
@@ -4012,7 +5246,6 @@ const ROLE_VIEWS = {
   "Financial Leader": { tabs: ["financial", "monitoring"], monitoring: { views: ["financial"], initial: "financial" } },
   "CSR Leader": { tabs: ["co2", "monitoring"], monitoring: { views: ["co2"], initial: "co2" } },
   "Market Manager": { tabs: ["market", "monitoring"], monitoring: { views: ["financial", "co2", "store"], initial: "financial", scope: "market" } },
-  "Collection Manager": { tabs: ["collection", "monitoring"], monitoring: { views: ["financial", "co2", "store"], initial: "financial", scope: "collection" } },
   "Product Manager": { tabs: ["product"] },
   "IT Data": { tabs: ["ontology"] },
 };
@@ -4025,15 +5258,14 @@ const TAB_DEFS = {
   financial: { label: "Financial Framework", icon: Scale },
   co2: { label: "CO₂ Framework", icon: Leaf },
   market: { label: "Market Framework", icon: Crown },
-  collection: { label: "Collection Framework", icon: LayoutGrid },
   product: { label: "Product Manager", icon: Baby },
   itfas: { label: "KFI", icon: Factory },
   monitoring: { label: "Monitoring", icon: TrendingUp },
 };
-/* End-to-end order: the four framing pages live as sub-tabs of the single Framework tab */
+/* End-to-end order: the three framing pages live as sub-tabs of the single Framework tab */
 const E2E_TABS = ["ontology", "framework", "product", "itfas", "monitoring"];
 const allowedTabs = (mode, role) => (mode === "role" ? ROLE_VIEWS[role].tabs : E2E_TABS);
-/* A framework page id (financial, co2, market, collection) maps to the Framework tab in the end-to-end view */
+/* A framework page id (financial, co2, market) maps to the Framework tab in the end-to-end view */
 const tabKey = (mode, id) => (mode === "endToEnd" && FRAMEWORK_IDS.includes(id) ? "framework" : id);
 
 export default function App() {
@@ -4045,13 +5277,15 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState("Financial Leader");
   const [ontology, setOntology] = useState(ONTOLOGY_INITIAL);
   const [selId, setSelId] = useState(PRODUITS[0].id);
-  const [agentId, setAgentId] = useState("essentiel");
+  /* Offer agents: one active agent per group (pyramid, product type), each with its target segment */
+  const [agentIds, setAgentIds] = useState({ pyramid: "permanent", type: "essentials" });
+  const [agentTargets, setAgentTargets] = useState({ pyramid: SEGMENTS[0], type: SEGMENTS[0] });
   const [territoire, setTerritoire] = useState("Core");
   const [zone, setZone] = useState(null);
   const [colIdx, setColIdx] = useState(0);
-  const [levers, setLevers] = useState(new Set());
-  const [pvcMap, setPvcMap] = useState({});
-  const [volMap, setVolMap] = useState({});
+  /* Per collection structure: material criteria of each colourway reference and indicators entered by hand */
+  const [materials, setMaterials] = useState({});
+  const [kpiEdits, setKpiEdits] = useState({});
   const [scenMap, setScenMap] = useState({});
   const [submitted, setSubmitted] = useState(new Set());
   const [validated, setValidated] = useState(new Set());
@@ -4071,19 +5305,28 @@ export default function App() {
   const [snapshots, setSnapshots] = useState({});
   const [reopened, setReopened] = useState(new Set());
 
-  const lowCarbon = agentId === "bascarbone";
   const sel = PRODUITS.find((p) => p.id === selId) || PRODUITS[0];
-  const delta = useMemo(() => {
-    const d = { rev: 0, co2: 0, lead: 0, rup: 0 };
-    AMELIO.forEach((ag) => ag.levers.forEach((lv) => { if (levers.has(lv.id)) Object.entries(lv.d).forEach(([k, v]) => { d[k] += v; }); }));
-    return d;
-  }, [levers]);
-  /* Effective footprint in kg CO₂e / piece (Low-carbon strategy + levers) */
-  const co2Eff = (p) => Math.max(0.1, +((p.co2 * (lowCarbon ? 0.72 : 1) + delta.co2).toFixed(1)));
+  const materialsOf = (p) => materials[p.id] || p.coloris.map(() => defaultMaterial(p));
+  const scenIdOf = (p) => scenMap[p.id] ?? "mx";
+  /* Effective indicators of a collection structure: a value entered by hand overrides the calculated one.
+     Cost price and CO₂ weight come from the material criteria; the margin follows PVI and cost price unless entered by hand. */
+  const kpisOf = (p) => {
+    const m = materialStructure(p, materialsOf(p));
+    const sc = p.scenarios.find((x) => x.id === scenIdOf(p)) || p.scenarios[0];
+    const e = kpiEdits[p.id] || {};
+    const pvi = e.pvi ?? p.prix, rev = e.rev ?? m.rev;
+    const marge = pvi > 0 ? Math.round(((pvi - rev) / pvi) * 100) : 0;
+    return {
+      pvi, rev, marge: e.marge ?? marge, co2: e.co2 ?? m.co2, lead: e.lead ?? sc.lead, vol: e.vol ?? p.volume,
+      computed: { pvi: p.prix, rev: m.rev, marge, co2: m.co2, lead: sc.lead, vol: p.volume }, edited: e,
+    };
+  };
+  /* Effective footprint in kg CO₂e / piece */
+  const co2Eff = (p) => kpisOf(p).co2;
   /* Collection total in t CO₂e = Σ effective volume × effective footprint / 1000 */
   const collectionCO2 = useMemo(
-    () => +PRODUITS.reduce((sum, p) => sum + ((volMap[p.id] ?? p.volume) * co2Eff(p)) / 1000, 0).toFixed(1),
-    [volMap, lowCarbon, delta]
+    () => +PRODUITS.reduce((sum, p) => { const k = kpisOf(p); return sum + (k.vol * k.co2) / 1000; }, 0).toFixed(1),
+    [materials, kpiEdits, scenMap]
   );
   /* Reactive breach engine */
   /* Each breach carries a level (breach / watch), the KPIs it affects and, for product rules, the product id, so RuleStatus can sit next to any KPI */
@@ -4104,36 +5347,44 @@ export default function App() {
     if (perfRules.carbonEnvelope < 5200) b.push({ area: "KFI", level: "breach", kpis: ["supplier", "carbon"], label: `Supplier trajectory incompatible with the ${u(perfRules.carbonEnvelope)} t carbon target`, action: "allocate 4 references to Anatolia Textiles and Taipei Knitworks" });
     else if (perfRules.carbonEnvelope < 5600) b.push({ area: "KFI", level: "watch", kpis: ["supplier", "carbon"], label: `Supplier trajectory close to the ${u(perfRules.carbonEnvelope)} t carbon target`, action: "secure low-carbon capacity at Anatolia Textiles and Taipei Knitworks" });
     return b;
-  }, [perfRules, collectionCO2, lowCarbon, delta]);
+  }, [perfRules, collectionCO2, materials, kpiEdits, scenMap]);
 
   /* Frozen copy of every choice of an offer at approval time (per product id) */
   const buildSnapshot = (p) => {
-    const ag = AGENTS.find((a) => a.id === agentId) || null;
-    const scId = scenMap[p.id] ?? (lowCarbon ? "px" : "mx");
-    const sc = p.scenarios.find((x) => x.id === scId) || p.scenarios[0];
-    const pvi = pvcMap[p.id] ?? p.prix, volume = volMap[p.id] ?? p.volume, revient = Math.max(0.1, +((p.revient + delta.rev).toFixed(2)));
-    return { at: new Date(), name: p.name, segment: p.segment, pvi, volume, revient, marge: Math.round(((pvi - revient) / pvi) * 100), co2: co2Eff(p), lead: Math.max(7, sc.lead + delta.lead), territoire, zone, agentId, agentName: ag ? ag.name : null, scenId: sc.id, scenName: sc.name, colIdx, coloris: p.coloris[colIdx] ? `${p.coloris[colIdx][0]} (${p.id.toUpperCase()}-${String(colIdx + 1).padStart(2, "0")})` : null, levers: [...levers], leverNames: AMELIO.flatMap((g) => g.levers).filter((lv) => levers.has(lv.id)).map((lv) => lv.t), sheet: sheets[p.id] || null };
+    const k = kpisOf(p);
+    const sc = p.scenarios.find((x) => x.id === scenIdOf(p)) || p.scenarios[0];
+    const agentApplied = Object.fromEntries(AGENT_GROUPS.map((g) => [g.id, agentIds[g.id] && agentApplies(agentTargets[g.id], p) ? agentIds[g.id] : null]));
+    return { at: new Date(), name: p.name, segment: p.segment, pvi: k.pvi, volume: k.vol, revient: k.rev, marge: k.marge, co2: k.co2, lead: k.lead, territoire, zone, agentIds: { ...agentIds }, agentTargets: { ...agentTargets }, agentApplied, scenId: sc.id, scenName: sc.name, colIdx, coloris: p.coloris[colIdx] ? `${p.coloris[colIdx][0]} (${p.id.toUpperCase()}-${String(colIdx + 1).padStart(2, "0")})` : null, materials: materialsOf(p).map((m) => ({ ...m })), edits: { ...k.edited }, sheet: sheets[p.id] || null };
   };
+  const setKpi = (id, f, v) => setKpiEdits((m) => { const e = { ...(m[id] || {}) }; if (v == null) delete e[f]; else e[f] = v; return { ...m, [id]: e }; });
 
   const st = {
     selId, setSelId: (id) => { setSelId(id); setColIdx(0); setNote(""); }, sel,
-    agentId, setAgentId, lowCarbon,
+    agentIds, setAgent: (g, id) => setAgentIds((m) => ({ ...m, [g]: id })),
+    agentTargets, setAgentTarget: (g, t) => setAgentTargets((m) => ({ ...m, [g]: t })),
     territoire, setTerritoire, zone, setZone,
     colIdx, setColIdx, note, setNote,
     perfRules, setPerfRules, collectionCO2, breaches,
-    levers, toggleLever: (id) => setLevers((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }),
     submitted, validated, returned, approved, rejected,
+    kpisOf, setKpi,
+    materialsOf,
+    /* a new material criterion recalculates cost price and CO₂ weight: their manual values give way to the calculation */
+    setMaterial: (id, i, f, v) => {
+      const p = PRODUITS.find((x) => x.id === id);
+      setMaterials((m) => { const list = (m[id] || p.coloris.map(() => defaultMaterial(p))).map((x, j) => (j === i ? { ...x, [f]: v } : x)); return { ...m, [id]: list }; });
+      setKpiEdits((m) => { const e = { ...(m[id] || {}) }; delete e.rev; delete e.co2; return { ...m, [id]: e }; });
+    },
     co2Of: co2Eff,
-    revOf: (p) => Math.max(0.1, +((p.revient + delta.rev).toFixed(2))),
-    leadOf: (sc) => Math.max(7, sc.lead + delta.lead),
-    rupOf: (sc) => Math.max(0.5, +((sc.rupture + delta.rup).toFixed(1))),
-    pvcOf: (p) => pvcMap[p.id] ?? p.prix,
-    volOf: (p) => volMap[p.id] ?? p.volume,
-    scenOf: (p) => scenMap[p.id] ?? (lowCarbon ? "px" : "mx"),
-    recoFor: (p) => p.scenarios.find((x) => x.id === (lowCarbon ? "px" : "mx")),
+    revOf: (p) => kpisOf(p).rev,
+    leadOf: (sc) => sc.lead,
+    rupOf: (sc) => sc.rupture,
+    pvcOf: (p) => kpisOf(p).pvi,
+    volOf: (p) => kpisOf(p).vol,
+    scenOf: scenIdOf,
+    recoFor: (p) => p.scenarios.find((x) => x.id === "mx"),
     statutOf: (p) => (validated.has(p.id) ? "Validated" : p.statut),
-    setPvc: (id, v) => setPvcMap((m) => ({ ...m, [id]: v })),
-    setVol: (id, v) => setVolMap((m) => ({ ...m, [id]: v })),
+    setPvc: (id, v) => setKpi(id, "pvi", v),
+    setVol: (id, v) => setKpi(id, "vol", v),
     setScen: (id, s) => setScenMap((m) => ({ ...m, [id]: s })),
     submit: (id) => { setSubmitted((s) => new Set(s).add(id)); setReturned((s) => { const n = new Set(s); n.delete(id); return n; }); },
     validate: (id) => setValidated((s) => new Set(s).add(id)),
@@ -4145,7 +5396,7 @@ export default function App() {
     isLocked: (id) => approved.has(id) && !reopened.has(id),
     isReopened: (id) => approved.has(id) && reopened.has(id),
     snapshotOf: (id) => snapshots[id],
-    reopen: (id) => { const sn = snapshots[id]; if (sn) { setAgentId(sn.agentId); setTerritoire(sn.territoire); setZone(sn.zone); setColIdx(sn.colIdx); setLevers(new Set(sn.levers)); setPvcMap((m) => ({ ...m, [id]: sn.pvi })); setVolMap((m) => ({ ...m, [id]: sn.volume })); setScenMap((m) => ({ ...m, [id]: sn.scenId })); } setReopened((r) => new Set(r).add(id)); setNote(""); },
+    reopen: (id) => { const sn = snapshots[id]; if (sn) { setAgentIds({ ...sn.agentIds }); setAgentTargets({ ...sn.agentTargets }); setTerritoire(sn.territoire); setZone(sn.zone); setColIdx(sn.colIdx); setMaterials((m) => ({ ...m, [id]: sn.materials.map((x) => ({ ...x })) })); setKpiEdits((m) => ({ ...m, [id]: { ...sn.edits } })); setScenMap((m) => ({ ...m, [id]: sn.scenId })); } setReopened((r) => new Set(r).add(id)); setNote(""); },
     setSheet: (id, info) => setSheets((m) => ({ ...m, [id]: info })),
     marketBrief, setMarketBrief, setTab: go,
   };
@@ -4166,7 +5417,6 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
           <WhiteBadge><img src={KIABI_LOGO} alt="Kiabi" style={{ height: 26, width: "auto", display: "block" }} /></WhiteBadge>
           <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>KIABI Control Tower</div>
-          {lowCarbon && <Chip color={T.ok}>🌿 Low-carbon strategy active</Chip>}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ display: "inline-flex", border: `1px solid ${T.line}`, borderRadius: 999, overflow: "hidden" }}>
               {[["endToEnd", "End-to-end view"], ["role", "Role-based view"]].map(([id, l]) => (
@@ -4195,7 +5445,6 @@ export default function App() {
         {activeTab === "financial" && <BudgetPage st={st} fw={fw} />}
         {activeTab === "co2" && <CO2Page fw={fw} />}
         {activeTab === "market" && <MarketFrameworkPage st={st} />}
-        {activeTab === "collection" && <CollectionFrameworkPage st={st} />}
         {activeTab === "product" && <ProductManagerPage st={st} />}
         {activeTab === "itfas" && <ProductionPage st={st} />}
         {activeTab === "monitoring" && <MonitoringPage key={viewMode + selectedRole} fw={fw} views={roleMon ? roleMon.views : ["financial", "co2"]} initial={roleMon ? roleMon.initial : "financial"} scope={roleMon ? roleMon.scope || "group" : "group"} />}
