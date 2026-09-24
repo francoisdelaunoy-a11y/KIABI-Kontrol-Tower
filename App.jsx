@@ -5248,6 +5248,7 @@ const ROLE_VIEWS = {
   "CSR Leader": { tabs: ["co2", "monitoring"], monitoring: { views: ["co2"], initial: "co2" } },
   "Market Manager": { tabs: ["market", "monitoring"], monitoring: { views: ["financial", "co2", "store"], initial: "financial", scope: "market" } },
   "Product Manager": { tabs: ["product"] },
+  "KFI Leader": { tabs: ["itfas"] },
   "IT Data": { tabs: ["ontology"] },
 };
 /* Revenue committed by the Baby offer (M€) — compared with the Group envelope rule */
