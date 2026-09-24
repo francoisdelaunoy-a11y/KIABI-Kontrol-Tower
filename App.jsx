@@ -2357,15 +2357,16 @@ function KfiReconciliation({ st }) {
    the social, environmental and industrial audits run the same engine on their own data.
    Everything is simulated; no supplier, figure, review or signal refers to a real partner.
    ============================================================ */
-const QV_BLUE = "#0082C3";
-const QV_BLUE_DARK = "#005F8F";
+/* Cockpit typography and palette (T, SANS, MONO) applied to the Quality Vision layout */
+const QV_BLUE = T.accent;
+const QV_BLUE_DARK = T.human;
 const QV_UNIFORM_TOTAL = 184;
 /* Tailwind slate scale of the mock-up, converted to inline styles */
-const QV_S = { 50: "#f8fafc", 100: "#f1f5f9", 200: "#e2e8f0", 300: "#cbd5e1", 400: "#94a3b8", 500: "#64748b", 600: "#475569", 800: "#1e293b", 900: "#0f172a" };
-const QV_FONT = "Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
-const QV_XS = { fontSize: 12, lineHeight: "16px" };
-const QV_SM = { fontSize: 14, lineHeight: "20px" };
-const QV_TAB = { fontVariantNumeric: "tabular-nums" };
+const QV_S = { 50: T.panel2, 100: T.lineSoft, 200: T.line, 300: T.faint, 400: T.faint, 500: T.faint, 600: T.sub, 800: T.ink, 900: T.ink };
+const QV_FONT = SANS;
+const QV_XS = { fontSize: 11.5, lineHeight: 1.45 };
+const QV_SM = { fontSize: 12.5, lineHeight: 1.45 };
+const QV_TAB = { fontFamily: MONO };
 const QV_TRUNC = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 const qvName = (id) => PRODUITS_BASE.find((p) => p.id === id).name;
 
@@ -3223,8 +3224,8 @@ function QvCockpit({ cfg, autoRun = false }) {
   const setProduct = (product) => setParams({ product, ...cfg.products[product].defaults });
   const reset = () => setParams(cfg.initial);
   const techById = Object.fromEntries(product.techPack.map((t) => [t.id, t]));
-  const btn = { display: "flex", alignItems: "center", gap: 6, ...QV_SM, padding: "6px 12px", borderRadius: 6, fontFamily: "inherit", cursor: "pointer" };
-  const card = { ...QV_XS, border: `1px solid ${QV_S[200]}`, borderRadius: 6, padding: "8px 12px" };
+  const btn = { display: "flex", alignItems: "center", gap: 6, ...QV_SM, fontWeight: 800, padding: "6px 12px", borderRadius: 10, fontFamily: "inherit", cursor: "pointer" };
+  const card = { ...QV_XS, border: `1px solid ${QV_S[200]}`, borderRadius: 10, padding: "8px 12px" };
 
   return (
     <div style={{ background: "#ffffff", color: QV_S[900], fontFamily: QV_FONT }}>
@@ -3233,10 +3234,10 @@ function QvCockpit({ cfg, autoRun = false }) {
         <div style={{ padding: "4px 0 20px", display: "flex", flexDirection: md ? "row" : "column", gap: 16, alignItems: md ? "flex-end" : "stretch", justifyContent: "space-between" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ display: "inline-block", width: 28, height: 28, borderRadius: 4, background: QV_BLUE }} />
+              <span style={{ display: "inline-block", width: 28, height: 28, borderRadius: 8, background: QV_BLUE }} />
               <span style={{ ...QV_SM, color: QV_S[500] }}>{cfg.kicker}</span>
             </div>
-            <h1 style={{ margin: "8px 0 0", fontSize: md ? 30 : 24, lineHeight: 1.25, fontWeight: 600, letterSpacing: "-0.025em", color: QV_S[900] }}>
+            <h1 style={{ margin: "8px 0 0", fontSize: md ? 19 : 16, lineHeight: 1.3, fontWeight: 800, color: QV_S[900] }}>
               {cfg.headline}
             </h1>
             <p style={{ margin: "4px 0 0", ...QV_SM, color: QV_S[500] }}>Today, one grid of {cfg.uniformTotal} checkpoints for every supplier. Tomorrow, {grid.length} for this one.</p>
@@ -3260,9 +3261,9 @@ function QvCockpit({ cfg, autoRun = false }) {
           {cfg.stages.map((s, i) => {
             const done = stage > i, active = running && stage === i;
             return (
-              <div key={s} style={{ borderRadius: 6, padding: "8px 12px", ...QV_XS, borderWidth: 1, borderStyle: "solid", transition: "color .15s, background-color .15s, border-color .15s", ...(done ? { borderColor: "transparent", color: "#ffffff", background: QV_BLUE } : active ? { borderColor: QV_S[300], background: QV_S[50] } : { borderColor: QV_S[200], color: QV_S[400] }) }}>
+              <div key={s} style={{ borderRadius: 10, padding: "8px 12px", ...QV_XS, borderWidth: 1, borderStyle: "solid", transition: "color .15s, background-color .15s, border-color .15s", ...(done ? { borderColor: "transparent", color: "#ffffff", background: QV_BLUE } : active ? { borderColor: QV_S[300], background: QV_S[50] } : { borderColor: QV_S[200], color: QV_S[400] }) }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontWeight: 500 }}>{["A", "B", "C", "D"][i]}</span>
+                  <span style={{ fontWeight: 800, fontFamily: MONO }}>{["A", "B", "C", "D"][i]}</span>
                   <span style={QV_TRUNC}>{active ? s + "…" : s}</span>
                   {done && <Check size={12} style={{ marginLeft: "auto", flexShrink: 0 }} />}
                   {active && <span style={{ marginLeft: "auto", width: 8, height: 8, borderRadius: 999, flexShrink: 0, background: QV_BLUE, animation: "qvPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite" }} />}
@@ -3283,7 +3284,7 @@ function QvCockpit({ cfg, autoRun = false }) {
                 <div key={t.id} style={card}>
                   <div style={{ display: "flex", justifyContent: "space-between", color: QV_S[500] }}><span>{t.kind}</span><span style={QV_TAB}>{Math.round(t.conf * 100)}% confidence</span></div>
                   <div style={{ marginTop: 2, color: QV_S[800] }}>{t.text}</div>
-                  <div style={{ marginTop: 6, height: 4, background: QV_S[100], borderRadius: 4 }}><div style={{ height: 4, borderRadius: 4, width: `${t.conf * 100}%`, background: QV_BLUE }} /></div>
+                  <div style={{ marginTop: 6, height: 4, background: QV_S[100], borderRadius: 99 }}><div style={{ height: 4, borderRadius: 99, width: `${t.conf * 100}%`, background: QV_BLUE }} /></div>
                 </div>
               ))}
             </div>
@@ -3294,7 +3295,7 @@ function QvCockpit({ cfg, autoRun = false }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {product.reviews.map((r) => (
                 <div key={r.id} style={card}>
-                  <div style={{ color: QV_S[800], fontWeight: 500 }}>{r.text}</div>
+                  <div style={{ color: QV_S[800], fontWeight: 700 }}>{r.text}</div>
                   <div style={{ marginTop: 4, display: "flex", gap: 8 }}><QvPill>{r.freq}</QvPill><QvPill dark={r.sev === "severe"}>{r.sev}</QvPill></div>
                   <div style={{ marginTop: 6, color: QV_S[500], fontStyle: "italic" }}>“{r.quote}”</div>
                   <div style={{ marginTop: 6, color: QV_S[500] }}>Implicates: {r.maps.map((m) => qvShortTech(cfg, techById[m])).join(", ")}</div>
@@ -3322,12 +3323,12 @@ function QvCockpit({ cfg, autoRun = false }) {
                 <div key={cp.id} style={{ paddingTop: 10, paddingBottom: 10, display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 12, alignItems: "start", borderTop: i ? `1px solid ${QV_S[100]}` : "none", ...(cp.strike ? { boxShadow: `inset 3px 0 0 ${QV_BLUE}`, paddingLeft: 12 } : { paddingLeft: 15 }) }}>
                   <div style={{ gridColumn: "span 1 / span 1", ...QV_SM, ...QV_TAB, color: QV_S[400], paddingTop: 2 }}>{cp.rank}</div>
                   <div style={{ gridColumn: md ? "span 6 / span 6" : "span 11 / span 11" }}>
-                    <div style={{ ...QV_SM, color: QV_S[900] }}>{cp.label}{cp.strike && <span style={{ marginLeft: 8, ...QV_XS, fontWeight: 500, color: QV_BLUE }}>surgical strike</span>}</div>
+                    <div style={{ ...QV_SM, fontWeight: 700, color: QV_S[900] }}>{cp.label}{cp.strike && <span style={{ marginLeft: 8 }}><Chip color={T.accent}>surgical strike</Chip></span>}</div>
                     <div style={{ marginTop: 2, ...QV_XS, color: QV_S[500] }}>{cp.why}</div>
                     {!md && <div style={{ marginTop: 4, ...QV_XS, color: QV_S[500] }}>{cfg.methods[cp.method].label} · weight {cp.weight}</div>}
                   </div>
                   {md && <div style={{ gridColumn: "span 2 / span 2", ...QV_XS, color: QV_S[600], paddingTop: 2 }}>{cfg.methods[cp.method].label}</div>}
-                  {md && <div style={{ gridColumn: "span 2 / span 2", paddingTop: 6 }}><div style={{ height: 6, background: QV_S[100], borderRadius: 4 }}><div style={{ height: 6, borderRadius: 4, width: `${cp.weight}%`, background: cp.strike ? QV_BLUE : QV_S[400] }} /></div></div>}
+                  {md && <div style={{ gridColumn: "span 2 / span 2", paddingTop: 6 }}><div style={{ height: 6, background: QV_S[100], borderRadius: 99 }}><div style={{ height: 6, borderRadius: 99, width: `${cp.weight}%`, background: cp.strike ? QV_BLUE : QV_S[400] }} /></div></div>}
                   {md && <div style={{ gridColumn: "span 1 / span 1", ...QV_XS, ...QV_TAB, color: QV_S[600], paddingTop: 2, textAlign: "right" }}>{cp.weight}</div>}
                 </div>
               ))}
@@ -3353,7 +3354,7 @@ function QvSupplierProfile({ cfg, params, profile }) {
   const { nq, qa, dpr, parts } = profile;
   const segs = [
     { k: "nq", label: cfg.hist.segLabel, w: cfg.weights.hist, v: parts.nq, color: QV_BLUE_DARK },
-    { k: "standards", label: "Standards", w: cfg.weights.standards, v: parts.standards, color: "#7fbfe0" },
+    { k: "standards", label: "Standards", w: cfg.weights.standards, v: parts.standards, color: T.silver },
     { k: "audits", label: "KIABI audits", w: cfg.weights.audits, v: parts.audits, color: QV_BLUE },
   ];
   const maxCost = Math.max(1, ...nq.costs);
@@ -3361,16 +3362,16 @@ function QvSupplierProfile({ cfg, params, profile }) {
   return (
     <div style={QV_XS}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 30, lineHeight: "36px", fontWeight: 600, ...QV_TAB }}>{profile.score}</span>
+        <span style={{ fontSize: 26, lineHeight: 1.2, fontWeight: 800, ...QV_TAB }}>{profile.score}</span>
         <span style={{ ...QV_SM, color: QV_S[600] }}>{cfg.scoreWord} · {profile.level}</span>
       </div>
-      <div style={{ marginTop: 8, display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: QV_S[100] }}>
+      <div style={{ marginTop: 8, display: "flex", height: 8, borderRadius: 99, overflow: "hidden", background: QV_S[100] }}>
         {segs.map((s) => <div key={s.k} style={{ width: `${s.v}%`, background: s.color }} title={s.label} />)}
       </div>
       <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
         {segs.map((s) => (
           <div key={s.k}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, background: s.color }} /><span style={{ color: QV_S[600] }}>{s.label}</span></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 99, flexShrink: 0, background: s.color }} /><span style={{ color: QV_S[600] }}>{s.label}</span></div>
             <div style={{ color: QV_S[800], ...QV_TAB, fontWeight: 500 }}>+{s.v} <span style={{ color: QV_S[400], fontWeight: 400 }}>of {Math.round(s.w * 100)}</span></div>
           </div>
         ))}
@@ -3385,7 +3386,7 @@ function QvSupplierProfile({ cfg, params, profile }) {
             {nq.costs.map((c, i) => (
               <div key={i} style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center" }}>
                 <span style={{ color: QV_S[600], ...QV_TAB }}>{cfg.hist.fmt(c)}</span>
-                <div style={{ width: "100%", borderRadius: 4, height: `${Math.max(6, (c / maxCost) * 32)}px`, background: QV_BLUE_DARK }} />
+                <div style={{ width: "100%", borderRadius: 5, height: `${Math.max(6, (c / maxCost) * 32)}px`, background: QV_BLUE_DARK }} />
                 <span style={{ color: QV_S[400] }}>Y-{3 - i}</span>
               </div>
             ))}
@@ -3427,9 +3428,9 @@ function QvSupplierProfile({ cfg, params, profile }) {
 
 function QvBlock({ title, value, contribution, children }) {
   return (
-    <div style={{ marginTop: 12, border: `1px solid ${QV_S[200]}`, borderRadius: 6, padding: "8px 12px" }}>
+    <div style={{ marginTop: 12, border: `1px solid ${QV_S[200]}`, borderRadius: 10, padding: "8px 12px" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontWeight: 500, color: QV_S[800] }}>{title}</span>
+        <span style={{ fontWeight: 700, color: QV_S[800] }}>{title}</span>
         <span style={{ ...QV_TAB, flexShrink: 0, color: QV_BLUE }}>+{contribution} to score</span>
       </div>
       <div style={{ color: QV_S[600] }}>{value}</div>
@@ -3444,11 +3445,11 @@ function qvStageState(stage, running, i) { return stage > i ? "done" : running &
 function QvStageCard({ letter, title, sub, state, children, wide, hero }) {
   const done = state === "done";
   return (
-    <section style={{ minWidth: 0, borderRadius: 6, borderWidth: hero ? 2 : 1, borderStyle: done ? "solid" : "dashed", borderColor: hero && done ? QV_BLUE : QV_S[200] }}>
+    <section style={{ minWidth: 0, borderRadius: 10, borderWidth: hero ? 2 : 1, borderStyle: done ? "solid" : "dashed", borderColor: hero && done ? QV_BLUE : QV_S[200] }}>
       <div style={{ padding: "12px 16px", borderBottom: `1px solid ${QV_S[100]}`, display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 4, color: "#ffffff", ...QV_XS, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 500, background: done ? QV_BLUE : QV_S[400] }}>{letter}</span>
+        <span style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 99, color: "#ffffff", ...QV_XS, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 500, background: done ? QV_BLUE : QV_S[400] }}>{letter}</span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ ...QV_SM, fontWeight: 500 }}>{title}</div>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>{title}</div>
           <div style={{ ...QV_XS, color: QV_S[500], ...QV_TRUNC }}>{sub}</div>
         </div>
       </div>
@@ -3460,7 +3461,7 @@ function QvStageCard({ letter, title, sub, state, children, wide, hero }) {
 }
 
 function QvParamPanel({ cfg, params, setParams, setProduct, product, md }) {
-  const sel = { display: "block", width: "100%", boxSizing: "border-box", marginTop: 4, ...QV_SM, border: `1px solid ${QV_S[200]}`, borderRadius: 6, padding: "6px 8px", background: "#ffffff", color: QV_S[900], fontFamily: "inherit", outline: "none" };
+  const sel = { display: "block", width: "100%", boxSizing: "border-box", marginTop: 4, ...QV_SM, border: `1px solid ${QV_S[200]}`, borderRadius: 10, padding: "6px 8px", background: "#ffffff", color: QV_S[900], fontFamily: "inherit", outline: "none" };
   const lbl = { ...QV_XS, color: QV_S[600] };
   const set = (k) => (e) => setParams({ ...params, [k]: e.target.value });
   const toggleExtra = (k) => setParams({ ...params, extras: params.extras.includes(k) ? params.extras.filter((x) => x !== k) : [...params.extras, k] });
@@ -3472,7 +3473,7 @@ function QvParamPanel({ cfg, params, setParams, setProduct, product, md }) {
     </label>
   );
   return (
-    <div style={{ background: QV_S[50], border: `1px solid ${QV_S[200]}`, borderRadius: 6, padding: 16 }}>
+    <div style={{ background: QV_S[50], border: `1px solid ${QV_S[200]}`, borderRadius: 10, padding: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: md ? "repeat(3, minmax(0, 1fr))" : "minmax(0, 1fr)", gap: 12 }}>
         <label style={lbl}>{cfg.productLabel}
           <select style={sel} value={params.product} onChange={(e) => setProduct(e.target.value)}>
@@ -3495,7 +3496,7 @@ function QvParamPanel({ cfg, params, setParams, setProduct, product, md }) {
           const on = params.extras.includes(k);
           const relevant = !e.families || e.families.includes(product.family);
           return (
-            <button key={k} onClick={() => toggleExtra(k)} style={{ padding: "4px 8px", borderRadius: 6, ...QV_XS, fontFamily: "inherit", cursor: "pointer", ...(on ? { color: "#ffffff", border: "1px solid transparent", background: QV_BLUE } : { border: `1px solid ${QV_S[200]}`, background: "#ffffff", color: QV_S[600] }) }} title={relevant ? "" : "Not relevant to this product family: no effect on the score"}>
+            <button key={k} onClick={() => toggleExtra(k)} style={{ padding: "4px 8px", borderRadius: 10, ...QV_XS, fontFamily: "inherit", cursor: "pointer", ...(on ? { color: "#ffffff", border: "1px solid transparent", background: QV_BLUE } : { border: `1px solid ${QV_S[200]}`, background: "#ffffff", color: QV_S[600] }) }} title={relevant ? "" : "Not relevant to this product family: no effect on the score"}>
               {e.label}{!relevant && on ? " (no effect)" : ""}
             </button>
           );
@@ -3506,7 +3507,7 @@ function QvParamPanel({ cfg, params, setParams, setProduct, product, md }) {
 }
 
 function QvPill({ children, dark }) {
-  return <span style={{ padding: "2px 6px", borderRadius: 4, ...QV_XS, ...(dark ? { background: QV_S[800], color: "#ffffff" } : { background: QV_S[100], color: QV_S[600] }) }}>{children}</span>;
+  return <Chip color={dark ? T.bad : T.sub}>{children}</Chip>;
 }
 
 /* Supplier compliance section of the KFI tab: one audit type at a time */
