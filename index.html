@@ -35,6 +35,7 @@
       const compiled = Babel.transform(source, {
         presets: ["react"],
         sourceType: "module",
+        compact: true,
         filename: "App.jsx"
       }).code;
       const moduleUrl = URL.createObjectURL(new Blob([compiled], { type: "text/javascript" }));
