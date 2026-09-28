@@ -4027,14 +4027,15 @@ const FIN_STORES = {
   MA: [["Casablanca Morocco Mall", 8.5, 1.09], ["Rabat Arribat", 6.4, 1.0], ["Marrakech Menara", 5.9, 0.9]],
   OT: [["Lisboa Colombo", 3.5, 1.02], ["Dubai Mirdif (franchise)", 2.8, 1.14], ["Tunis Tunisia Mall (franchise)", 2.2, 0.96]],
 };
-function computeCountryAgent(frame, shares) {
+function computeCountryAgent(frame, shares, dems = {}) {
   const rows = FIN_COUNTRIES.map((c) => {
     const share = shares[c.code] ?? c.share;
     const ca = (frame.budget * share) / 100;
-    const dem = frame.demarque + c.demDelta;
+    const demProp = +(frame.demarque + c.demDelta).toFixed(1); /* agent proposal: frame markdown + country delta */
+    const dem = dems[c.code] ?? demProp; /* the CDG Pays can overwrite it */
     const stores = (FIN_STORES[c.code] || []).map(([name, w, trend]) => ({ name, w, trend, ca: (ca * w) / 100, out: Math.abs(trend - 1) >= 0.08 }));
     const named = stores.reduce((s, x) => s + x.ca, 0);
-    return { ...c, share, ca, dem, next: ca * (1 + FIN_HORIZONS[1].growth / 100), stores, other: { n: c.stores - stores.length, ca: ca - named } };
+    return { ...c, share, ca, dem, demProp, demEdited: dems[c.code] != null, next: ca * (1 + FIN_HORIZONS[1].growth / 100), stores, other: { n: c.stores - stores.length, ca: ca - named } };
   });
   const total = rows.reduce((s, r) => s + r.ca, 0);
   const shareSum = rows.reduce((s, r) => s + r.share, 0);
@@ -4052,7 +4053,7 @@ function computeCountryAgent(frame, shares) {
 }
 
 /* ---- Collection agent (CDG Collections): four categories Men / Women / Kids / Baby, their offers, bridged to the Group ---- */
-function computeCollectionAgent(frame, offerBudgets, offerTme) {
+function computeCollectionAgent(frame, offerBudgets, offerTme, offerDem = {}) {
   const ocShare = FIN_CAT_SHARE;
   const ocTarget = frame.budget * ocShare;
   const baseTotal = FIN_CAT_BASE;
@@ -4061,8 +4062,9 @@ function computeCollectionAgent(frame, offerBudgets, offerTme) {
     const proposed = +(o.budget * factor).toFixed(1);
     const budget = offerBudgets[o.id] ?? proposed;
     const tme = offerTme[o.id] ?? o.tme;
-    const tmvExp = tmvModel(tme, o.demarque);
-    return { ...o, baseBudget: o.budget, proposed, budget, tme, tmvExp, tmeExp: tmeModel(o.tmv, o.demarque), chainOk: Math.abs(o.tmv - tmvExp) <= 1.5, edited: offerBudgets[o.id] != null || offerTme[o.id] != null };
+    const demarque = offerDem[o.id] ?? o.demarque; /* markdown proposed from the referential, editable by the CDG Collections */
+    const tmvExp = tmvModel(tme, demarque);
+    return { ...o, baseBudget: o.budget, demProp: o.demarque, demarque, demEdited: offerDem[o.id] != null, proposed, budget, tme, tmvExp, tmeExp: tmeModel(o.tmv, demarque), chainOk: Math.abs(o.tmv - tmvExp) <= 1.5, edited: offerBudgets[o.id] != null || offerTme[o.id] != null || offerDem[o.id] != null };
   });
   const offersTotal = offers.reduce((s, o) => s + o.budget, 0);
   const colls = FIN_CATEGORIES.map((cat) => {
@@ -4094,17 +4096,35 @@ function computeCollectionAgent(frame, offerBudgets, offerTme) {
 }
 
 /* ---- KFI agent (KFI Director): allocation on the partner panel for a RELEX demand scenario — feasibility, not revenue ---- */
-function computeKfiAgent(scenarioId) {
+/* Allocated volume per route (partner or off-panel) edited by the KFI Director: the new total is spread over the families
+   in proportion to the default allocation of that route (or to the family forecast when the route had nothing) */
+function kfiApplyAllocEdits(sc, base, edits = {}) {
+  const alloc = Object.fromEntries(Object.entries(base).map(([f, a]) => [f, { ...a }]));
+  const fams = sc.families.map((x) => x.family);
+  const fc = kfiSum(sc.families, (x) => x.forecast) || 1;
+  Object.entries(edits).forEach(([id, v]) => {
+    const cur = kfiSum(fams, (f) => (base[f] || {})[id] || 0);
+    let left = v, big = null;
+    fams.forEach((f) => { alloc[f] = alloc[f] || {}; const w = cur ? ((base[f] || {})[id] || 0) / cur : sc.families.find((x) => x.family === f).forecast / fc; alloc[f][id] = Math.round(v * w); left -= alloc[f][id]; if (w > 0 && (!big || alloc[f][id] > alloc[big][id])) big = f; });
+    if (big) alloc[big][id] += left; /* rounding remainder: the route total is exactly the value entered */
+  });
+  return alloc;
+}
+function computeKfiAgent(scenarioId, allocEdits = {}) {
   const sc = KFI_FORECAST_SCENARIOS.find((s) => s.id === scenarioId) || KFI_FORECAST_SCENARIOS[0];
-  const r = computeKfiReconciliation(KFI_PARTNER_PLANS, sc, KFI_DEFAULT_ALLOC[sc.id]);
+  const edits = allocEdits[sc.id] || {};
+  const r = computeKfiReconciliation(KFI_PARTNER_PLANS, sc, kfiApplyAllocEdits(sc, KFI_DEFAULT_ALLOC[sc.id], edits));
+  const def = computeKfiReconciliation(KFI_PARTNER_PLANS, sc, KFI_DEFAULT_ALLOC[sc.id]);
+  const proposed = { ...Object.fromEntries(def.partners.map((p) => [p.id, p.alloc])), [KFI_HORS]: def.horsPanel };
   const short = r.partners.filter((p) => p.shortfall), over = r.partners.filter((p) => p.overload > 0);
   const checks = [
     { ok: short.length === 0, block: false, label: short.length ? `Under-commitment: ${short.map((p) => `${p.supplier} ${kp(-p.minGap)} below its minimum`).join(" · ")}` : "Every partner at or above its minimum commitment" },
     { ok: over.length === 0, block: false, label: over.length ? `Over-capacity: ${over.map((p) => `${p.supplier} +${kp(p.overload)}`).join(" · ")}` : "No partner above its maximum capacity" },
     { ok: r.horsPanel === 0, block: false, label: r.horsPanel ? `Off-panel: ${kp(r.horsPanel)} on non-qualified emergency sourcing` : "No off-panel volume" },
     { ok: r.costDeltaPct <= 0.5, block: false, label: `Cost / PA gap: projected ${fr2(r.projCost)} €/pc vs business plan ${fr2(r.planCost)} €/pc (${sp(r.costDeltaPct)})` },
+    { ok: r.uncovered === 0 && r.overAllocated === 0, block: false, label: r.uncovered || r.overAllocated ? `Allocation vs RELEX demand ${mp(r.totalForecast)}: ${r.uncovered ? `${kp(r.uncovered)} uncovered` : ""}${r.uncovered && r.overAllocated ? " · " : ""}${r.overAllocated ? `${kp(r.overAllocated)} allocated above the demand` : ""}` : `Allocation covers the RELEX demand exactly (${mp(r.totalForecast)})` },
   ];
-  return { sc, r, checks, panelPlanned: kfiSum(KFI_PARTNER_PLANS, (p) => p.plannedVolume) };
+  return { sc, r, checks, proposed, edits, panelPlanned: kfiSum(KFI_PARTNER_PLANS, (p) => p.plannedVolume) };
 }
 
 /* ---- Supply/Collection agent (CDG Supply/Collections): PVI, PA, TMB, volumes and purchases per collection ---- */
@@ -4296,7 +4316,7 @@ function BudgetModule({ fw }) {
   const { budgetGlob: glob, setBudgetGlob: setGlob, budgetDepts: depts, budgetFlow: flow, setBudgetFlow: setFlow } = fw; /* shared with Monitoring */
   const [countryOpen, setCountryOpen] = useState("FR");
   /* Editing an agent's input withdraws that agent's signature: the CDG signs again, even if the figures come back to their old values */
-  const INPUT_AGENT = { countryShares: "country", offerBudgets: "collection", offerTme: "collection", kfiScenario: "kfi", supply: "supply", season: "seasonColl", carry: "seasonSupply" };
+  const INPUT_AGENT = { countryShares: "country", countryDem: "country", offerBudgets: "collection", offerTme: "collection", offerDem: "collection", kfiScenario: "kfi", kfiAlloc: "kfi", supply: "supply", season: "seasonColl", carry: "seasonSupply" };
   const setF = (patch) => setFlow((f) => {
     const p = typeof patch === "function" ? patch(f) : patch;
     const valid = { ...(p.valid || f.valid) };
@@ -4314,9 +4334,16 @@ function BudgetModule({ fw }) {
   const ref = frame ? frame.snap : glob;
 
   /* Agents: pure functions on the validated frame and each CDG's inputs */
-  const country = useMemo(() => computeCountryAgent(ref, flow.countryShares), [ref, flow.countryShares]);
-  const coll = useMemo(() => computeCollectionAgent(ref, flow.offerBudgets, flow.offerTme), [ref, flow.offerBudgets, flow.offerTme]);
-  const kfi = useMemo(() => computeKfiAgent(flow.kfiScenario), [flow.kfiScenario]);
+  const country = useMemo(() => computeCountryAgent(ref, flow.countryShares, flow.countryDem || {}), [ref, flow.countryShares, flow.countryDem]);
+  const coll = useMemo(() => computeCollectionAgent(ref, flow.offerBudgets, flow.offerTme, flow.offerDem || {}), [ref, flow.offerBudgets, flow.offerTme, flow.offerDem]);
+  const kfi = useMemo(() => computeKfiAgent(flow.kfiScenario, flow.kfiAlloc || {}), [flow.kfiScenario, flow.kfiAlloc]);
+  const setAlloc = (id, kpcs) => setF((f) => ({ kfiAlloc: { ...(f.kfiAlloc || {}), [f.kfiScenario]: { ...((f.kfiAlloc || {})[f.kfiScenario] || {}), [id]: Math.max(0, kpcs) * 1000 } } }));
+  const allocCell = (id, v, color) => (
+    <td style={finNum}>
+      <input type="number" step={5} aria-label={`Allocated ${id}`} value={Math.round(v / 1000)} onChange={(e) => setAlloc(id, num(e))} style={{ ...finInp, width: 70, color: color || T.ink, borderColor: kfi.edits[id] != null ? T.human : undefined }} /> <span style={{ fontSize: 10, color: T.faint }}>kpcs</span>
+      {kfi.edits[id] != null && <div style={{ fontSize: 9.5, color: T.faint, fontFamily: MONO }}>prop. {kp(kfi.proposed[id])}</div>}
+    </td>
+  );
   const supply = useMemo(() => computeSupplyAgent(coll, flow.supply, kfi), [coll, flow.supply, kfi]);
   const sColl = useMemo(() => computeSeasonCollection(coll, flow.season), [coll, flow.season]);
   const sSup = useMemo(() => computeSeasonSupply(sColl, supply, flow.supply, flow.carry, kfi), [sColl, supply, flow.supply, flow.carry, kfi]);
@@ -4324,9 +4351,9 @@ function BudgetModule({ fw }) {
   /* A validation is valid only while its inputs and the upstream keys are unchanged (key comparison) */
   const fk = frameValid ? finKey([frame.at, frame.snap]) : null;
   const keys = {};
-  keys.country = finKey([fk, flow.countryShares]);
-  keys.collection = finKey([fk, flow.offerBudgets, flow.offerTme]); /* the 2 years plan projections (flow.horizonEdits) never enter a key */
-  keys.kfi = finKey([fk, flow.kfiScenario]);
+  keys.country = finKey([fk, flow.countryShares, flow.countryDem || {}]);
+  keys.collection = finKey([fk, flow.offerBudgets, flow.offerTme, flow.offerDem || {}]); /* the 2 years plan projections (flow.horizonEdits) never enter a key */
+  keys.kfi = finKey([fk, flow.kfiScenario, (flow.kfiAlloc || {})[flow.kfiScenario] || {}]);
   keys.supply = finKey([keys.collection, keys.kfi, flow.supply]);
   keys.seasonColl = finKey([keys.country, keys.supply, flow.season]);
   keys.seasonSupply = finKey([keys.seasonColl, flow.carry]);
@@ -4478,17 +4505,19 @@ function BudgetModule({ fw }) {
           <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 4, lineHeight: 1.5 }}>The Country view and the Collection view each reconcile with the validated frame ({u(ref.budget)} M€, ±{FIN_TOL} %); the four views are never added together. KFI validates industrial feasibility and sourcing, not a revenue. Changing an input invalidates its validation and every downstream proposal.</div>
 
           <FinAgent title="Country agent" icon={Globe2} owner="CDG Pays" kpis="Revenue, markdown rate" gran="Country / store / year" source="Simulated country and store weights · target source: BAK country budget" status={s.country} checks={country.checks}
-            calc={`country revenue = validated frame × country share; country markdown = frame markdown + country delta; each country is split into three named demo stores (share of the country) and "other stores", so stores always add up to their country. N+1 = simulation (+${fr1(FIN_HORIZONS[1].growth)} %).`}
-            validateLabel="Validate as CDG Pays" onValidate={() => validate("country", "CDG Pays")} onCancel={() => cancel("country")} onReset={() => setF({ countryShares: Object.fromEntries(FIN_COUNTRIES.map((c) => [c.code, c.share])) })}>
+            calc={`country revenue = validated frame × country share; country markdown proposed = frame markdown + country delta, editable by the CDG Pays (the revenue-weighted markdown must stay within ±0,5 pt of the frame); each country is split into three named demo stores (share of the country) and "other stores", so stores always add up to their country. N+1 = simulation (+${fr1(FIN_HORIZONS[1].growth)} %).`}
+            validateLabel="Validate as CDG Pays" onValidate={() => validate("country", "CDG Pays")} onCancel={() => cancel("country")} onReset={() => setF({ countryShares: Object.fromEntries(FIN_COUNTRIES.map((c) => [c.code, c.share])), countryDem: {} })}>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Country", "Share (%)", "Revenue FY 26-27", "Markdown", "Stores", "Revenue N+1 (sim.)", ""].map((h, j) => <th key={h + j} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
+                <thead><tr>{["Country", "Share (%)", "Revenue FY 26-27", "Markdown (%)", "Stores", "Revenue N+1 (sim.)", ""].map((h, j) => <th key={h + j} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
                 <tbody>
                   {country.rows.map((r) => (
                     <tr key={r.code}>
                       <td style={{ ...finTd, fontWeight: 800 }}>{r.name}</td>
                       <td style={finNum}><input type="number" step={0.5} value={r.share} onChange={(e) => setIn("countryShares", r.code, num(e))} style={finInp} /></td>
-                      <td style={finNum}>{fr1(r.ca)} M€</td><td style={finNum}>{fr1(r.dem)} %</td><td style={finNum}>{r.stores.length + r.other.n}</td><td style={{ ...finNum, color: T.faint }}>{fr1(r.next)} M€</td>
+                      <td style={finNum}>{fr1(r.ca)} M€</td>
+                      <td style={finNum}><input type="number" step={0.5} aria-label={`Markdown ${r.name}`} value={r.dem} onChange={(e) => setIn("countryDem", r.code, num(e))} style={{ ...finInp, width: 62, borderColor: r.demEdited ? T.human : undefined }} />{r.demEdited && <div style={{ fontSize: 9.5, color: T.faint, fontFamily: MONO }}>prop. {fr1(r.demProp)} %</div>}</td>
+                      <td style={finNum}>{r.stores.length + r.other.n}</td><td style={{ ...finNum, color: T.faint }}>{fr1(r.next)} M€</td>
                       <td style={{ ...finTd, textAlign: "right" }}><button onClick={() => setCountryOpen(r.code)} style={{ cursor: "pointer", background: "transparent", border: "none", color: T.blue, fontSize: 11, fontWeight: 700, fontFamily: SANS }}>{countryOpen === r.code ? "stores ▾" : "stores →"}</button></td>
                     </tr>
                   ))}
@@ -4506,11 +4535,11 @@ function BudgetModule({ fw }) {
           </FinAgent>
 
           <FinAgent title="Collection agent" icon={LayoutGrid} owner="CDG Collections" kpis="Revenue, PVI, markdown, TMB (= TME), TMV, contribution" gran="Category (Men / Women / Kids / Baby) / offer / year · Group consolidated" source="Offer referential with explicit offer → category mapping (demo: six historical offers + five Men / Women offers) · target source: BAK collection budget" status={s.collection} checks={coll.checks}
-            calc={`${FIN_CAT_PERIM} target = validated frame × the share of the Group revenue carried by the four categories in the demo referential (${pc(coll.ocShare * 100)}) = ${fr1(coll.ocTarget)} M€; each of the ${coll.offers.length} offers is scaled by ${fr2(coll.factor)} and summed into its category; category rates are revenue-weighted, contribution = category revenue ÷ total of the four; the chain is checked with tmvModel / tmeModel and the totals with computeOfferBreakdown. The rest of the Group (${fr1(coll.rest)} M€) is a bridge line, never split by category.`}
-            validateLabel="Validate as CDG Collections" onValidate={() => validate("collection", "CDG Collections")} onCancel={() => cancel("collection")} onReset={() => setF({ offerBudgets: {}, offerTme: {} })}>
+            calc={`${FIN_CAT_PERIM} target = validated frame × the share of the Group revenue carried by the four categories in the demo referential (${pc(coll.ocShare * 100)}) = ${fr1(coll.ocTarget)} M€; each of the ${coll.offers.length} offers is scaled by ${fr2(coll.factor)} and summed into its category; markdown and TMB are proposed from the referential and editable per offer; category rates are revenue-weighted, contribution = category revenue ÷ total of the four; the chain is checked with tmvModel / tmeModel and the totals with computeOfferBreakdown. The rest of the Group (${fr1(coll.rest)} M€) is a bridge line, never split by category.`}
+            validateLabel="Validate as CDG Collections" onValidate={() => validate("collection", "CDG Collections")} onCancel={() => cancel("collection")} onReset={() => setF({ offerBudgets: {}, offerTme: {}, offerDem: {} })}>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Category → offer", "Contribution", "Proposed", "Revenue (M€)", "PVI", "Markdown", "TMB (= TME) %", "TMV", "Expected TMV", "Chain"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
+                <thead><tr>{["Category → offer", "Contribution", "Proposed", "Revenue (M€)", "PVI", "Markdown (%)", "TMB (= TME) %", "TMV", "Expected TMV", "Chain"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
                 <tbody>
                   {coll.colls.map((c) => (
                     <React.Fragment key={c.name}>
@@ -4525,7 +4554,8 @@ function BudgetModule({ fw }) {
                           <td style={{ ...finNum, color: T.faint }}>{pc(coll.offersTotal ? (o.budget / coll.offersTotal) * 100 : 0)}</td>
                           <td style={{ ...finNum, color: T.faint }}>{fr1(o.proposed)}</td>
                           <td style={finNum}><input type="number" step={1} value={o.budget} onChange={(e) => setIn("offerBudgets", o.id, num(e))} style={finInp} /></td>
-                          <td style={finNum}>{fr2(o.pvm)} €</td><td style={finNum}>{fr1(o.demarque)} %</td>
+                          <td style={finNum}>{fr2(o.pvm)} €</td>
+                          <td style={finNum}><input type="number" step={0.5} aria-label={`Markdown ${o.name}`} value={o.demarque} onChange={(e) => setIn("offerDem", o.id, num(e))} style={{ ...finInp, width: 62, borderColor: o.demEdited ? T.human : undefined }} />{o.demEdited && <div style={{ fontSize: 9.5, color: T.faint, fontFamily: MONO }}>prop. {fr1(o.demProp)} %</div>}</td>
                           <td style={finNum}><input type="number" step={0.5} value={o.tme} onChange={(e) => setIn("offerTme", o.id, num(e))} style={{ ...finInp, width: 62 }} /></td>
                           <td style={finNum}>{fr1(o.tmv)} %</td><td style={finNum}>{fr1(o.tmvExp)} %</td>
                           <td style={{ ...finTd, textAlign: "right" }}><Chip color={o.chainOk ? T.ok : T.bad}>{o.chainOk ? "OK" : `${sg(o.tmv - o.tmvExp)} pt`}</Chip></td>
@@ -4543,8 +4573,8 @@ function BudgetModule({ fw }) {
           </FinAgent>
 
           <FinAgent title="KFI agent" icon={Factory} owner="KFI Director" kpis="Allocation, capacity, commitments, cost / PA" gran="Collection / supplier / demand scenario" source="KFI partner business plans and RELEX scenarios (demo) · same rules as the KFI tab" status={s.kfi} checks={kfi.checks}
-            calc="allocates the selected RELEX demand scenario on the Baby knitwear partner panel with computeKfiReconciliation (the KFI tab engine) and flags under-commitment, over-capacity, off-panel volume and the cost / PA gap. Its validation covers industrial feasibility and sourcing only — no revenue is produced, nothing is added to the budget."
-            validateLabel={kfi.r.globalVerdict === "Violation" ? "Validate feasibility with reservations (KFI Director)" : "Validate feasibility (KFI Director)"} onValidate={() => validate("kfi", "KFI Director")} onCancel={() => cancel("kfi")}>
+            calc="allocates the selected RELEX demand scenario on the Baby knitwear partner panel with computeKfiReconciliation (the KFI tab engine); the allocated volume of each partner and of the off-panel route is proposed from the default allocation and editable by the KFI Director (spread over the families in proportion to the proposal); the agent flags under-commitment, over-capacity, off-panel volume and the cost / PA gap. Its validation covers industrial feasibility and sourcing only — no revenue is produced, nothing is added to the budget."
+            validateLabel={kfi.r.globalVerdict === "Violation" ? "Validate feasibility with reservations (KFI Director)" : "Validate feasibility (KFI Director)"} onValidate={() => validate("kfi", "KFI Director")} onCancel={() => cancel("kfi")} onReset={() => setF((f) => { const a = { ...(f.kfiAlloc || {}) }; delete a[f.kfiScenario]; return { kfiAlloc: a }; })}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
               <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>DEMAND SCENARIO</span>
               {KFI_FORECAST_SCENARIOS.map((x) => <button key={x.id} onClick={() => setF({ kfiScenario: x.id })} style={{ cursor: "pointer", background: flow.kfiScenario === x.id ? T.accent : T.panel, color: flow.kfiScenario === x.id ? "#ffffff" : T.sub, border: `1px solid ${flow.kfiScenario === x.id ? T.accent : T.line}`, borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>{x.name} · {mp(x.total)}</button>)}
@@ -4552,12 +4582,12 @@ function BudgetModule({ fw }) {
             </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Supplier", "Allocated", "Plan", "Minimum", "Capacity", "Cost / PA", "Verdict"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
+                <thead><tr>{["Supplier", "Allocated (editable)", "Plan", "Minimum", "Capacity", "Cost / PA", "Verdict"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
                 <tbody>
                   {kfi.r.partners.map((p) => (
-                    <tr key={p.id}><td style={{ ...finTd, fontWeight: 800 }}>{p.supplier}</td><td style={finNum}>{kp(p.alloc)}</td><td style={finNum}>{kp(p.plannedVolume)}</td><td style={{ ...finNum, color: p.shortfall ? T.warn : T.ink }}>{kp(p.minCommitment)}</td><td style={{ ...finNum, color: p.overload ? T.bad : T.ink }}>{kp(p.maxCapacity)}</td><td style={finNum}>{fr2(p.targetCost)} €</td><td style={{ ...finTd, textAlign: "right" }}><KfiVerdict v={p.verdict} /></td></tr>
+                    <tr key={p.id}><td style={{ ...finTd, fontWeight: 800 }}>{p.supplier}</td>{allocCell(p.id, p.alloc, p.overload ? T.bad : null)}<td style={finNum}>{kp(p.plannedVolume)}</td><td style={{ ...finNum, color: p.shortfall ? T.warn : T.ink }}>{kp(p.minCommitment)}</td><td style={{ ...finNum, color: p.overload ? T.bad : T.ink }}>{kp(p.maxCapacity)}</td><td style={finNum}>{fr2(p.targetCost)} €</td><td style={{ ...finTd, textAlign: "right" }}><KfiVerdict v={p.verdict} /></td></tr>
                   ))}
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Off-panel</td><td style={{ ...finNum, color: kfi.r.horsPanel ? T.bad : T.ink }}>{kp(kfi.r.horsPanel)}</td><td colSpan={3} style={{ ...finTd, color: T.faint }}>uncovered {kp(kfi.r.uncovered)}</td><td style={finNum}>{fr2(kfi.r.projCost)} €</td><td style={{ ...finTd, textAlign: "right" }}><KfiVerdict v={kfi.r.horsVerdict} /></td></tr>
+                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Off-panel</td>{allocCell(KFI_HORS, kfi.r.horsPanel, kfi.r.horsPanel ? T.bad : null)}<td colSpan={3} style={{ ...finTd, color: T.faint }}>allocated {kp(kfi.r.allocated)} vs demand {kp(kfi.r.totalForecast)} · uncovered {kp(kfi.r.uncovered)}{kfi.r.overAllocated ? ` · above demand ${kp(kfi.r.overAllocated)}` : ""}</td><td style={finNum}>{fr2(kfi.r.projCost)} €</td><td style={{ ...finTd, textAlign: "right" }}><KfiVerdict v={kfi.r.horsVerdict} /></td></tr>
                 </tbody>
               </table>
             </div>
@@ -5928,7 +5958,7 @@ export default function App() {
   const [co2Glob, setCo2Glob] = useState({ ...CO2_GLOBAL });
   const [co2Depts, setCo2Depts] = useState(CO2_DEPTS.map((d) => ({ ...d })));
   /* Budget process (Financial Framework) and budget revisions (Monitoring) — demo state, never written to BAK */
-  const [budgetFlow, setBudgetFlow] = useState(() => ({ frame: null, horizon: "fy27", countryShares: Object.fromEntries(FIN_COUNTRIES.map((c) => [c.code, c.share])), offerBudgets: {}, offerTme: {}, kfiScenario: "base", supply: {}, season: {}, carry: {}, valid: {}, received: false, arbitration: null, horizonEdits: {} }));
+  const [budgetFlow, setBudgetFlow] = useState(() => ({ frame: null, horizon: "fy27", countryShares: Object.fromEntries(FIN_COUNTRIES.map((c) => [c.code, c.share])), countryDem: {}, offerBudgets: {}, offerTme: {}, offerDem: {}, kfiScenario: "base", kfiAlloc: {}, supply: {}, season: {}, carry: {}, valid: {}, received: false, arbitration: null, horizonEdits: {} }));
   const [revisions, setRevisions] = useState([]);
   /* Market brief (written in Market Framework, read-only elsewhere), product sheet progress, approval snapshots */
   const [marketBrief, setMarketBrief] = useState(null);
