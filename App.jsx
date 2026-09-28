@@ -145,23 +145,55 @@ const materialIdx = (m) => {
   const mat = MATERIALS[m.material], cert = certApplies(m) ? CERTIFICATIONS[m.cert] : { cost: 1, co2: 1 };
   return { cost: mat.cost * cert.cost * weightIdx(m.weight, 0.55), co2: mat.co2 * cert.co2 * weightIdx(m.weight, 0.75) };
 };
-/* Per colourway reference: cost price and footprint relative to the default criteria of the structure */
+/* Estimated lifespan — DEMO ASSUMPTION, not a measurement, a warranty or a certified LCA.
+   years = years of use of a baby garment in the chosen material at 190 g/m² (washing resistance, pilling, hand-me-down potential);
+   weightLife = share of the lifespan that follows the fabric mass: a heavier knit lasts longer. It is set above the CO₂ weight share (0,75)
+   on purpose, so a heavier fabric raises the absolute CO₂ per piece but lowers the CO₂ per year of use in a comparable example.
+   The certification has no effect on the lifespan. */
+const LIFESPAN_DEMO = {
+  weightLife: 1.0,
+  years: {
+    "Cotton": 2.0, "US cotton": 2.1, "Organic cotton": 2.1, "BCI cotton": 2.0,
+    "Recycled cotton": 1.7, /* shorter recycled fibres pill earlier */
+    "Recycled polyester": 2.3, "Recycled polyamide": 2.5, "PES": 2.4, "Polyamide": 2.6,
+    "Viscose": 1.6, /* weaker when wet */
+    "Lyocell": 1.9, "Tencel": 1.9, "Linen": 2.6,
+  },
+};
+const lifespanOf = (m) => +((LIFESPAN_DEMO.years[m.material] || 2) * weightIdx(m.weight, LIFESPAN_DEMO.weightLife)).toFixed(2);
+/* Per colourway reference: cost price and footprint relative to the default criteria of the structure, plus the demo lifespan
+   and the CO₂ per year of use (absolute CO₂ per piece ÷ estimated lifespan) — the absolute CO₂ is kept as is */
 const materialRefs = (p, list) => {
   const base = materialIdx(defaultMaterial(p));
-  return list.map((m) => { const i = materialIdx(m); return { ...m, fCost: i.cost / base.cost, fCo2: i.co2 / base.co2, cost: +(p.revient * (i.cost / base.cost)).toFixed(2), co2: +(p.co2 * (i.co2 / base.co2)).toFixed(2), applies: certApplies(m) }; });
+  return list.map((m) => { const i = materialIdx(m); const co2 = +(p.co2 * (i.co2 / base.co2)).toFixed(2); const life = lifespanOf(m); return { ...m, fCost: i.cost / base.cost, fCo2: i.co2 / base.co2, cost: +(p.revient * (i.cost / base.cost)).toFixed(2), co2, life, co2Year: +(co2 / life).toFixed(3), applies: certApplies(m) }; });
 };
-/* Structure level: the volume is split evenly across the colourway references, so the structure takes their average */
+/* Structure level: the volume is split evenly across the colourway references, so the structure takes their average;
+   CO₂ per year of use = Σ volume × CO₂ ÷ Σ volume × lifespan (total emissions over total years of use), i.e. avg CO₂ ÷ avg lifespan */
 const materialStructure = (p, list) => {
   const refs = materialRefs(p, list);
   const avg = (k) => refs.reduce((s, r) => s + r[k], 0) / (refs.length || 1);
-  return { refs, rev: +(p.revient * avg("fCost")).toFixed(2), co2: +(p.co2 * avg("fCo2")).toFixed(2) };
+  const co2 = +(p.co2 * avg("fCo2")).toFixed(2);
+  const life = +avg("life").toFixed(2);
+  return { refs, rev: +(p.revient * avg("fCost")).toFixed(2), co2, life, co2Year: life ? +(co2 / life).toFixed(3) : 0 };
 };
 const materialSummary = (list) => {
   const m = {};
   list.forEach((x) => { const k = `${x.material} · ${x.cert} · ${x.weight} g`; m[k] = (m[k] || 0) + 1; });
   return Object.entries(m).map(([k, n]) => (n > 1 ? `${k} (×${n})` : k)).join(" / ");
 };
-const ZONES = ["North zone", "South zone", "Maghreb zone", "Middle East zone", "Tropical zones"];
+/* Kiabi zonier (demo nomenclature, one for the whole cockpit): North / South are Kiabi zones, not an automatic geographic ranking */
+const KIABI_ZONES = [
+  { id: "North", desc: "northern France, Benelux, Poland" },
+  { id: "South", desc: "southern France, Spain, Italy, Portugal" },
+  { id: "MENA", desc: "Maghreb + Middle East" },
+  { id: "Tropics", desc: "Antilles + sub-Saharan Africa" },
+];
+const ZONES = KIABI_ZONES.map((z) => z.id);
+/* Values saved by earlier versions (approval snapshots, reopened offers) are normalised on display and on reopen */
+const LEGACY_ZONE = { "North zone": "North", "South zone": "South", "Maghreb zone": "MENA", "Middle East zone": "MENA", "Tropical zones": "Tropics" };
+const normZone = (z) => (z ? LEGACY_ZONE[z] || z : z);
+/* International Assortment choice: "Optional" (was "Specific" in earlier versions) */
+const normTerr = (t) => (t === "Specific" ? "Optional" : t);
 const SEGMENTS = ["All collection structures", "Nightwear", "Underwear", "Licences"];
 const EXPERTS = {
   design: { role: "Business decision-maker", txt: "The product manager secures the key balances of the commercial structure of their offer." },
@@ -396,8 +428,8 @@ function ChefPage({ st }) {
   const snap = locked ? st.snapshotOf(sel.id) : null;
   const vAgents = locked ? snap.agentIds : st.agentIds;
   const vTargets = locked ? snap.agentTargets : st.agentTargets;
-  const vTerr = locked ? snap.territoire : st.territoire;
-  const vZone = locked ? snap.zone : st.zone;
+  const vTerr = normTerr(locked ? snap.territoire : st.territoire);
+  const vZone = normZone(locked ? snap.zone : st.zone);
   const vCol = locked ? snap.colIdx : st.colIdx;
   const vEdits = locked ? snap.edits : k.edited;
   const mat = materialStructure(sel, locked ? snap.materials : st.materialsOf(sel));
@@ -454,7 +486,7 @@ function ChefPage({ st }) {
           </>}>
           <div style={{ fontSize: 11.5, color: T.sub, marginBottom: 10, lineHeight: 1.5 }}>All choices are frozen as they were at approval. Selecting the offer does not unlock it: only “Edit offer again” reopens editing and restores these choices.</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 8 }}>
-            {[["Collection structure", snap.name], ["Segment", snap.segment], ["PVI", eur(snap.pvi)], ["Volume", `${u(snap.volume)} units`], ["Territory / zone", snap.territoire === "Specific" ? `Specific · ${snap.zone || "no zone"}` : "Core"], ...AGENT_GROUPS.map((g) => [`${g.short} agent`, (appliedAgent(g) || {}).name || "none"]), ["Sourcing scenario", snap.scenName], ["Colourway", snap.coloris || "—"], ["Material criteria", materialSummary(snap.materials)], ["Product sheet", snap.sheet ? `${snap.sheet.filled} / ${snap.sheet.total} fields${snap.sheet.codif ? ` · ${snap.sheet.codif}` : ""}${snap.sheet.written ? " · written to PLM" : ""}` : "not generated"]].map(([l, v]) => (
+            {[["Collection structure", snap.name], ["Segment", snap.segment], ["PVI", eur(snap.pvi)], ["Volume", `${u(snap.volume)} units`], ["Territory / zone", normTerr(snap.territoire) === "Optional" ? `Optional · ${normZone(snap.zone) || "no zone"}` : "Core"], ...AGENT_GROUPS.map((g) => [`${g.short} agent`, (appliedAgent(g) || {}).name || "none"]), ["Sourcing scenario", snap.scenName], ["Colourway", snap.coloris || "—"], ["Material criteria", materialSummary(snap.materials)], ["Product sheet", snap.sheet ? `${snap.sheet.filled} / ${snap.sheet.total} fields${snap.sheet.source ? ` · ${snap.sheet.source.toLowerCase()}` : ""}${snap.sheet.codif ? ` · ${snap.sheet.codif}` : ""}${snap.sheet.written ? " · written to PLM (simulated)" : ""}` : "not generated"]].map(([l, v]) => (
               <div key={l} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "8px 11px" }}>
                 <div style={{ fontSize: 10, color: T.faint, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5 }}>{l}</div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginTop: 3, lineHeight: 1.4 }}>{v}</div>
@@ -545,29 +577,29 @@ function ChefPage({ st }) {
             <span style={{ fontSize: 11, color: T.faint }}>offer roll-out across the store network</span>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {["Core", "Specific"].map((opt) => {
+            {["Core", "Optional"].map((opt) => {
               const on = vTerr === opt;
               return (
                 <button key={opt} disabled={locked} onClick={() => { if (locked) return; st.setTerritoire(opt); if (opt === "Core") st.setZone(null); }} style={{ ...lockStyle, flex: "1 1 220px", textAlign: "left", cursor: locked ? "not-allowed" : "pointer", display: "flex", alignItems: "flex-start", gap: 10, background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 10, padding: "11px 12px" }}>
                   <span style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, marginTop: 1, display: "grid", placeItems: "center", background: on ? T.human : "transparent", border: `1.5px solid ${on ? T.human : T.faint}` }}>{on && <Check size={12} color="#ffffff" />}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{opt}</div>
-                    <div style={{ fontSize: 10.5, color: T.faint, marginTop: 2, lineHeight: 1.4 }}>{opt === "Core" ? "Offer shared across the whole network, with no regional variation." : "Offer adapted for a specific geographical zone."}</div>
+                    <div style={{ fontSize: 10.5, color: T.faint, marginTop: 2, lineHeight: 1.4 }}>{opt === "Core" ? "Offer shared across the whole network, with no regional variation." : "Optional offer, listed in one Kiabi zone only."}</div>
                   </div>
                 </button>
               );
             })}
           </div>
-          {vTerr === "Specific" && (
+          {vTerr === "Optional" && (
             <div style={{ marginTop: 12 }}>
-              <span style={microLbl}>Target zone — only one at a time</span>
+              <span style={microLbl}>Target Kiabi zone — only one at a time</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {ZONES.map((z) => {
+                {KIABI_ZONES.map(({ id: z, desc }) => {
                   const on = vZone === z;
                   return (
                     <button key={z} disabled={locked} onClick={() => !locked && st.setZone(on ? null : z)} style={{ ...lockStyle, display: "inline-flex", alignItems: "center", gap: 8, cursor: locked ? "not-allowed" : "pointer", background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 999, padding: "7px 13px", fontSize: 12, fontWeight: 700, fontFamily: SANS, color: on ? T.ink : T.sub }}>
                       <span style={{ width: 15, height: 15, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: on ? T.human : "transparent", border: `1.5px solid ${on ? T.human : T.faint}` }}>{on && <Check size={10} color="#ffffff" />}</span>
-                      {z}
+                      {z}<span style={{ fontSize: 10, fontWeight: 400, color: T.faint }}>{desc}</span>
                     </button>
                   );
                 })}
@@ -619,7 +651,7 @@ function ChefPage({ st }) {
         <div style={{ overflowX: "auto", border: `1px solid ${T.lineSoft}`, borderRadius: 10, marginBottom: 6 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead><tr>
-              {["Colourway reference", "Material", "Certification", "Fabric weight", "Cost price", "CO₂ / piece"].map((c, j) => (
+              {["Colourway reference", "Material", "Certification", "Fabric weight", "Cost price", "CO₂ / piece", "Estimated lifespan", "CO₂ per year of use"].map((c, j) => (
                 <th key={c} style={{ textAlign: j >= 4 ? "right" : "left", padding: "7px 9px", fontSize: 10, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>
               ))}
             </tr></thead>
@@ -653,18 +685,24 @@ function ChefPage({ st }) {
                     </td>
                     <td style={{ ...matTd, textAlign: "right", fontFamily: MONO, whiteSpace: "nowrap" }}><div style={{ marginTop: 4, color: T.ink }}>{eur(r.cost)}</div>{delta(r.fCost, false)}</td>
                     <td style={{ ...matTd, textAlign: "right", fontFamily: MONO, whiteSpace: "nowrap" }}><div style={{ marginTop: 4, color: T.ink }}>{fr2(r.co2)} kg</div>{delta(r.fCo2, false)}</td>
+                    <td style={{ ...matTd, textAlign: "right", fontFamily: MONO, whiteSpace: "nowrap" }}><div style={{ marginTop: 4, color: T.ink }}>{fr1(r.life)} yrs</div><span style={{ fontSize: 10, color: T.faint }}>demo assumption</span></td>
+                    <td style={{ ...matTd, textAlign: "right", fontFamily: MONO, whiteSpace: "nowrap" }}><div style={{ marginTop: 4, color: T.ink, fontWeight: 700 }}>{fr2(r.co2Year)} kg CO₂e/yr</div><span style={{ fontSize: 10, color: T.faint }}>{fr2(r.co2)} ÷ {fr1(r.life)}</span></td>
                   </tr>
                 );
               })}
               <tr style={{ background: T.panel2 }}>
-                <td colSpan={4} style={{ padding: "8px 9px", fontSize: 10.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase", letterSpacing: 0.5 }}>Structure — average of the {sel.coloris.length} colourway refs (volume split evenly)</td>
+                <td colSpan={4} style={{ padding: "8px 9px", fontSize: 10.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase", letterSpacing: 0.5 }}>Structure — average of the {sel.coloris.length} colourway refs (volume split evenly) · CO₂/yr = Σ CO₂ ÷ Σ years of use</td>
                 <td style={{ padding: "8px 9px", textAlign: "right", fontFamily: MONO, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{eur(mat.rev)}</td>
                 <td style={{ padding: "8px 9px", textAlign: "right", fontFamily: MONO, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{fr2(mat.co2)} kg</td>
+                <td style={{ padding: "8px 9px", textAlign: "right", fontFamily: MONO, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{fr1(mat.life)} yrs</td>
+                <td style={{ padding: "8px 9px", textAlign: "right", fontFamily: MONO, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{fr2(mat.co2Year)} kg CO₂e/yr
+                  {vEdits.co2 != null && <div style={{ fontSize: 10, fontWeight: 400, color: T.human }}>manual CO₂ {fr2(locked ? snap.co2 : k.co2)} kg → {fr2((locked ? snap.co2 : k.co2) / (mat.life || 1))} kg CO₂e/yr</div>}
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div style={{ fontSize: 10.5, color: T.faint, lineHeight: 1.5, marginBottom: 16 }}>Organic cotton and GOTS raise the cost price; recycled materials lower the CO₂ weight; a heavier fabric raises both. Changing a criterion recalculates the cost price and the CO₂ weight below — they stay editable by hand afterwards.</div>
+        <div style={{ fontSize: 10.5, color: T.faint, lineHeight: 1.5, marginBottom: 16 }}>Organic cotton and GOTS raise the cost price; recycled materials lower the CO₂ weight; a heavier fabric raises both. Changing a criterion recalculates the cost price and the CO₂ weight below — they stay editable by hand afterwards. Estimated lifespan (years of use) is a demo assumption set by material and fabric weight (LIFESPAN_DEMO), not a measurement, a warranty or a certified LCA; CO₂ per year of use = CO₂ per piece ÷ estimated lifespan and comes in addition to the absolute CO₂, never instead of it. A heavier fabric raises the CO₂ per piece but lasts longer, which can lower the CO₂ per year of use.</div>
 
         <span style={microLbl}>Collection structure indicators — editable by hand, a manual value overrides the calculation</span>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -759,7 +797,7 @@ const OPTI = {
     { id: "c2", t: "Cap black at 5 % (transfer to camel)", sim: [["Black", "6 %", "5 %"], ["Camel", "10 %", "11 %"], ["Margin vs black threshold", "2 pts", "3 pts"]] },
   ],
   canaux: [
-    { id: "k1", t: "Open 3 Core structures to the South & Maghreb zones", sim: [["International", "30 %", "36 %"], ["Objective ≥ 35 %", "not met", "met"], ["Export volume", "—", "+180 000 pcs"]] },
+    { id: "k1", t: "Open 3 Core structures to the South & MENA zones", sim: [["International", "30 %", "36 %"], ["Objective ≥ 35 %", "not met", "met"], ["Export volume", "—", "+180 000 pcs"]] },
     { id: "k2", t: "Switch 2 physical-only structures to omnichannel", sim: [["Omnichannel", "62 %", "68 %"], ["Physical only", "28 %", "22 %"], ["E-com coverage", "—", "+6 pts"]] },
   ],
 };
@@ -918,7 +956,7 @@ function DirectricePage({ st }) {
     { id: "prix", icon: Scale, title: "Price coherence", verdict: "Alert", msg: "Over-density at the 9,00 € PVI (5 structures out of 12). Recommendation: smooth part of the offer towards the 7 – 8 € price points to restore the 4 → 15 € price ladder." },
     { id: "personas", icon: Users, title: "Target split", verdict: "Alert", msg: "The current customer slightly exceeds its target (above 40 %). Rebalance in favour of the trendy customer on the next store launches." },
     { id: "couleurs", icon: Palette, title: "Colour balance", verdict: "Compliant", msg: "Black at 6 % — below the 8 % threshold. S1 2027 fashion colour “Sage green” at 13 %: to push towards 18 % (season objective)." },
-    { id: "canaux", icon: Network, title: "Channel & geography split", verdict: "Alert", msg: "International at 30 % vs ≥ 35 % objective. Strengthen the export-eligible Core structures in the South and Maghreb zones." },
+    { id: "canaux", icon: Network, title: "Channel & geography split", verdict: "Alert", msg: "International at 30 % vs ≥ 35 % objective. Strengthen the export-eligible Core structures in the South and MENA zones." },
   ];
   const ck = (id) => checks.find((c) => c.id === id);
 
@@ -1067,11 +1105,14 @@ const catOf = (n) => { const s = n.toLowerCase(); if (s.includes("bod")) return 
    Product Manager (local simulation, no network)
    ============================================================ */
 const STYLE3D_NAME = "Style3D"; /* transcribed as "Steel 3D" in the voice brief — most likely Style3D; adjust here if needed */
+/* kind: "external" trend connector or "internal" Kiabi data — all simulated, no live connection. Store feedback is simulated store
+   feedback (see STORE_FEEDBACK), not real sales; Customer knowledge & sales history is a demo signal, not a real history extract */
 const MARKET_SOURCES = [
-  { id: "style3d", name: STYLE3D_NAME, desc: "3D styling & material trend library", signal: "3D material library flags soft velour, pointelle knits and matte ribs rising in baby nightwear" },
-  { id: "search", name: "Search trends", desc: "search interest by product family", signal: "search interest up for sleepsuits and bodysuit packs, flat on licensed characters" },
-  { id: "social", name: "Social listening", desc: "social conversations and creator content", signal: "sage green, ecru and dusty pink dominate baby content; comfort and easy dressing are the top themes" },
-  { id: "sales", name: "Sales history", desc: "S1 2025-2026 sell-through by collection structure", signal: "permanent bodysuit packs and nightwear drive 65 % of volume; the 9 € price point is saturated" },
+  { id: "style3d", kind: "external", name: STYLE3D_NAME, desc: "3D styling & material trend library", signal: "3D material library flags soft velour, pointelle knits and matte ribs rising in baby nightwear" },
+  { id: "search", kind: "external", name: "Search trends", desc: "search interest by product family", signal: "search interest up for sleepsuits and bodysuit packs, flat on licensed characters" },
+  { id: "social", kind: "external", name: "Social listening", desc: "social conversations and creator content", signal: "sage green, ecru and dusty pink dominate baby content; comfort and easy dressing are the top themes" },
+  { id: "sales", kind: "internal", name: "Customer knowledge & sales history", desc: "S1 2025-2026 sell-through and rotation by collection structure, crossed with loyalty-card customer knowledge", signal: "permanent bodysuit packs and nightwear drive 65 % of volume and rotate fastest; loyalty-card parents of 0-12 months buy multipacks every 6 weeks; the 9 € price point is saturated" },
+  { id: "store", kind: "internal", name: "Store feedback", desc: "qualitative feedback of the demo stores, Sept. – Oct. 2026 (same source as Store submissions)", signal: "tops: bodysuit multipacks (Barcelona, Lille) and warm sleepsuits (Kraków); flops: licensed characters (Lille, Kraków, Barcelona) and fleece sleepsuits in the warm South stores (Barcelona)" },
 ];
 const BRIEF_THEMES = [
   { re: /comfort|soft|cosy|cozy|gentle/i, theme: "Comfort & softness", guidance: "prioritise soft certified materials, flat seams and easy-dressing openings" },
@@ -1079,11 +1120,11 @@ const BRIEF_THEMES = [
   { re: /carbon|recycl|sustain|eco|planet|footprint/i, theme: "Low-carbon offer", guidance: "recycled cotton and nearshore sourcing on the highest-volume structures" },
   { re: /licen|character|disney|marvel|hero/i, theme: "Licences & characters", guidance: "keep licences as an animation within the 10 – 16 % Collab share" },
   { re: /colou?r|pastel|sage|palette|tone/i, theme: "Colour direction", guidance: "push the S1 2027 fashion colour towards 18 % of the colour mix" },
-  { re: /international|export|zone|maghreb|south|tropic/i, theme: "International reach", guidance: "open export-eligible Core structures to the South and Maghreb zones" },
+  { re: /international|export|zone|maghreb|mena|middle east|south|north|tropic/i, theme: "International reach", guidance: "open export-eligible Core structures to the South and MENA zones" },
   { re: /essential|basic|permanent|bodysuit|sleepsuit|nightwear|underwear/i, theme: "Essentials base", guidance: "secure permanent bodysuit packs and nightwear availability all season" },
   { re: /trend|fashion|novelty|capsule|impulse|animation|favourite|coup de c/i, theme: "Fashion animation", guidance: "keep Coup de cœur pieces within their 12 – 20 % animation share" },
 ];
-const SAMPLE_MARKET_INTENTION = "For S1 2027 the Baby market must stay the most accessible layette offer on the market: hold the 4 → 15 € price ladder, secure permanent bodysuit packs and nightwear every week of the season, and bring comfort and softness to every essential. We push a low-carbon direction on the biggest volumes with recycled cotton and nearshore sourcing. Colour direction: sage green and ecru as the season signature. Licences remain an animation of the offer, not the base. Open the export-eligible Core structures to the South and Maghreb zones.";
+const SAMPLE_MARKET_INTENTION = "For S1 2027 the Baby market must stay the most accessible layette offer on the market: hold the 4 → 15 € price ladder, secure permanent bodysuit packs and nightwear every week of the season, and bring comfort and softness to every essential. We push a low-carbon direction on the biggest volumes with recycled cotton and nearshore sourcing. Colour direction: sage green and ecru as the season signature. Licences remain an animation of the offer, not the base. Open the export-eligible Core structures to the South and MENA zones.";
 /* Pure local synthesis: structured brief derived from the written intention and the selected (simulated) sources */
 function synthesizeMarketBrief(text, sourceIds) {
   const clean = text.trim().replace(/\s+/g, " ");
@@ -1095,7 +1136,7 @@ function synthesizeMarketBrief(text, sourceIds) {
   return {
     headline: sentences[0] ? sentences[0].replace(/[.!?]+$/, "").slice(0, 180) : "Market intention to be written",
     themes: themes.length ? themes.map((t) => ({ theme: t.theme, guidance: t.guidance })) : [{ theme: "General market direction", guidance: "derive the collection guidelines from the intention above" }],
-    signals: sources.map((s) => ({ source: s.name, txt: s.signal })),
+    signals: sources.map((s) => ({ source: `${s.name} (simulated)`, txt: s.signal })),
     priorities,
     words: clean ? clean.split(" ").filter(Boolean).length : 0,
   };
@@ -1114,7 +1155,7 @@ function MarketBriefEditor({ st }) {
     <CollapsibleSection title="Write the market brief" lead={<span style={{ width: 22, height: 22, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: T.accent, color: "#ffffff", fontFamily: MONO, fontSize: 11, fontWeight: 800 }}>1</span>}
       sub="shared orientation for the whole market, then for the collections and the products"
       right={brief ? <span style={{ marginLeft: "auto" }}><Chip color={dirty ? T.warn : T.ok}>{dirty ? "Edited since last synthesis" : "Brief synthesized"}</Chip></span> : null}>
-      <span style={microLbl}>Trend data connectors — simulated sources, no network call</span>
+      <span style={microLbl}>Trend & internal data connectors — simulated sources, no network call</span>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 14 }}>
         {MARKET_SOURCES.map((s) => {
           const on = sources.has(s.id);
@@ -1122,7 +1163,7 @@ function MarketBriefEditor({ st }) {
             <button key={s.id} onClick={() => toggle(s.id)} style={{ textAlign: "left", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 9, background: on ? `${T.human}12` : T.panel2, border: `1px solid ${on ? T.human : T.line}`, borderRadius: 10, padding: "10px 12px", fontFamily: SANS }}>
               <span style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0, marginTop: 1, display: "grid", placeItems: "center", background: on ? T.human : "transparent", border: `1.5px solid ${on ? T.human : T.faint}` }}>{on && <Check size={11} color="#ffffff" />}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{s.name}</span><span style={{ fontSize: 9.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>simulated</span></span>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{s.name}</span><span style={{ fontSize: 9.5, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>{s.kind === "internal" ? "internal · simulated" : "external · simulated"}</span></span>
                 <span style={{ display: "block", fontSize: 10.5, color: T.faint, marginTop: 2, lineHeight: 1.4 }}>{s.desc}</span>
               </span>
               <span style={{ width: 7, height: 7, borderRadius: 99, background: on ? T.ok : T.line, flexShrink: 0, marginTop: 5 }} />
@@ -1255,7 +1296,7 @@ function FrameworkPage({ st, fw, sub, setSub }) {
 function ProductManagerPage({ st }) {
   return (
     <div>
-      <PageHeader title="Product Manager" desc="From the market brief to the product sheet: structure the Baby offer, break it down into products, generate the product sheet from a voice note and validate development." expert={EXPERTS.design} />
+      <PageHeader title="Product Manager" desc="From the market brief to the product sheet: structure the Baby offer, break it down into products, start the product sheet from a voice note, a PowerPoint or a screenshot and validate development." expert={EXPERTS.design} />
       <MarketBriefCard st={st} />
       <ChefPage st={st} />
     </div>
@@ -1264,52 +1305,93 @@ function ProductManagerPage({ st }) {
 
 /* ============================================================
    Product sheet assistant — end of the Product Manager journey:
-   a voice note is enough to generate and write the product sheet
+   a voice note, a PowerPoint or a screenshot starts the product sheet (all SIMULATED:
+   no real upload, no image analysis, no Centric connection, nothing is written to a real PLM)
    ============================================================ */
+const SHEET_MODES = [
+  { id: "voice", label: "Voice note", icon: Mic, from: "From voice note" },
+  { id: "ppt", label: "PowerPoint", icon: FileText, from: "From PowerPoint" },
+  { id: "screenshot", label: "Screenshot", icon: Box, from: "From screenshot" },
+];
 function ProductSheetAssistant({ st, locked }) {
   const sel = st.sel;
+  const [mode, setMode] = useState("voice");
   const [played, setPlayed] = useState(false);
   const [analyzed, setAnalyzed] = useState(false);
   const [fields, setFields] = useState({});
-  const [fromVocal, setFromVocal] = useState(new Set());
+  const [fromSrc, setFromSrc] = useState(new Set());
   const [inp, setInp] = useState("");
   const [written, setWritten] = useState(false);
+  const modeDef = SHEET_MODES.find((m) => m.id === mode);
 
   const REF_FIELDS = useMemo(() => ([
-    { k: "desc", label: "Product description", q: null },
+    { k: "desc", label: "Product description", q: "How should the product be described?", sug: [`${sel.name} — ${sel.compo} — S1 2027 collection`] },
     { k: "prog", label: "Programme", q: "Which programme should this product be attached to?", sug: ["Permanent layette", "S1 2027 capsule", "Licences programme"] },
-    { k: "couleurs", label: "Colour references", q: null },
-    { k: "tailles", label: "Size ranges", q: null },
+    { k: "couleurs", label: "Colour references", q: "Which colourway references are listed?", sug: [sel.coloris.map(([n], i) => `${n} (${sel.id.toUpperCase()}-${String(i + 1).padStart(2, "0")})`).join(" · ")] },
+    { k: "tailles", label: "Size ranges", q: "Which size range applies?", sug: ["1M → 36M (7 sizes)", "Newborn → 24M (6 sizes)"] },
     { k: "douane", label: "Associated customs code", q: "Which customs code should be associated?", sug: ["6111 20 90 — babies' garments, cotton, knitted", "6209 20 00 — babies' garments, cotton, woven"] },
-    { k: "cat", label: "Product category", q: null },
+    { k: "cat", label: "Product category", q: "Which product category?", sug: [catOf(sel.name)] },
     { k: "design", label: "Design link", q: "What is the link to the design folder?", sug: [`PLM/DESIGN-S127-${sel.id.toUpperCase()}`, "Studio > Figma layette S1 2027"] },
-    { k: "tissu", label: "Fabric type", q: null },
+    { k: "tissu", label: "Fabric type", q: "Which fabric type?", sug: ["Knitted (jersey)", "Knitted (rib)", "Woven (poplin)"] },
     { k: "process", label: "Industrial process used", q: "Which industrial process is used?", sug: ["Cut & sew knit", "Piece dyeing + making-up", "Placement print + making-up"] },
-    { k: "genre", label: "Gender", q: null },
+    { k: "genre", label: "Gender", q: "Which gender?", sug: ["Unisex baby", "Baby girl", "Baby boy"] },
     { k: "codif", label: "Product codification", q: "Which product code should be assigned?", sug: [`KB-BB-${sel.id.toUpperCase()}-S127`] },
     { k: "label", label: "Label type (tag / packaging)", q: "Which type of label should appear on the packaging / tag?", sug: ["Woven label + OEKO-TEX label", "Direct-to-skin print + traceability QR"] },
     { k: "moment", label: "Life moment", q: "Which life moment is this product for?", sug: ["Casual", "Smart"] },
     { k: "event", label: "Event", q: "Is the product tied to an event?", sug: ["No event", "Halloween", "Valentine's Day"] },
-    { k: "bom", label: "Material composition (BOM)", q: null },
+    { k: "bom", label: "Material composition (BOM)", q: "What is the material composition (BOM)?", sug: [`${sel.compo} · 100% polyester sewing thread · nickel-free snaps`] },
   ]), [sel]);
+  const code = (i) => `${sel.id.toUpperCase()}-${String(i + 1).padStart(2, "0")}`;
+  /* Simulated PowerPoint (product brief deck) and screenshot (supplier spec sheet): each one only carries a credible subset of the fields */
+  const pptSlides = [
+    ["Slide 1 — S1 2027 Baby offer", `${sel.name} · ${sel.compo} · programme: Permanent layette`],
+    ["Slide 2 — Colour story", sel.coloris.map(([n], i) => `${n} ${code(i)}`).join(" · ")],
+    ["Slide 3 — Positioning", `${catOf(sel.name)} · life moment: Casual · design folder PLM/DESIGN-S127-${sel.id.toUpperCase()}`],
+  ];
+  const shotLines = [
+    ["Supplier spec sheet (capture)", `Ref. ${sel.id.toUpperCase()} · knitted jersey · ${sel.compo}`],
+    ["Size chart", "1M · 3M · 6M · 12M · 18M · 24M · 36M"],
+    ["Trims & care label", "polyester sewing thread · nickel-free snaps · woven label + OEKO-TEX label · unisex"],
+  ];
+
 
   const transcript = `“Hi, this is for the referencing of the ${sel.name}. For the description you can put: ${sel.name.toLowerCase()}, ${sel.compo}, S1 2027 collection. The category is ${catOf(sel.name).toLowerCase()}, knitted, unisex baby. Sizes run from 1 month to 36 months. For the colourways you have ${sel.coloris.map(([n]) => n.toLowerCase()).join(", ")}. You already know the material composition: ${sel.compo}, with polyester thread and nickel-free snaps. Can you fill in the rest in Centric for me? Thanks!”`;
 
   /* Report the sheet progress to the shared state so an approval snapshot can freeze it */
-  const report = (f, w) => st.setSheet(sel.id, { filled: Object.keys(f).length, total: REF_FIELDS.length, codif: f.codif || null, written: w });
-  const analyze = () => {
-    const f = {
+  const report = (f, w) => st.setSheet(sel.id, { filled: Object.keys(f).length, total: REF_FIELDS.length, codif: f.codif || null, written: w, source: modeDef.from });
+  const extract = () => {
+    const all = {
       desc: `${sel.name} — ${sel.compo} — S1 2027 collection`,
       cat: catOf(sel.name),
       tailles: "1M → 36M (7 sizes)",
-      couleurs: sel.coloris.map(([n], i) => `${n} (${sel.id.toUpperCase()}-${String(i + 1).padStart(2, "0")})`).join(" · "),
+      couleurs: sel.coloris.map(([n], i) => `${n} (${code(i)})`).join(" · "),
       tissu: "Knitted (jersey)",
       genre: "Unisex baby",
       bom: `${sel.compo} · 100% polyester sewing thread · nickel-free snaps`,
+      prog: "Permanent layette",
+      design: `PLM/DESIGN-S127-${sel.id.toUpperCase()}`,
+      moment: "Casual",
+      label: "Woven label + OEKO-TEX label",
     };
-    setFields(f); setFromVocal(new Set(Object.keys(f))); setAnalyzed(true); setWritten(false); report(f, false);
+    const keys = { voice: ["desc", "cat", "tailles", "couleurs", "tissu", "genre", "bom"], ppt: ["desc", "prog", "couleurs", "cat", "design", "moment"], screenshot: ["tissu", "bom", "tailles", "label", "genre"] }[mode];
+    return Object.fromEntries(keys.map((k) => [k, all[k]]));
   };
-  const reset = () => { setPlayed(false); setAnalyzed(false); setFields({}); setFromVocal(new Set()); setInp(""); setWritten(false); st.setSheet(sel.id, null); };
+  const analyze = () => { const f = extract(); setFields(f); setFromSrc(new Set(Object.keys(f))); setAnalyzed(true); setWritten(false); report(f, false); };
+  const clearLocal = () => { setPlayed(false); setAnalyzed(false); setFields({}); setFromSrc(new Set()); setInp(""); setWritten(false); };
+  const reset = () => { clearLocal(); st.setSheet(sel.id, null); };
+  /* Changing the input mode resets the analysis in progress and its shared status (nothing real is written) */
+  const pickMode = (m) => { if (locked || m === mode) return; setMode(m); reset(); };
+  /* Changing the selected structure clears the local analysis; an unfinished (not written) status of the previous structure is cleared too */
+  const prevSel = useRef(sel.id);
+  const liveRef = useRef({ analyzed: false, written: false, locked });
+  liveRef.current = { analyzed, written, locked };
+  useEffect(() => {
+    if (prevSel.current === sel.id) return;
+    const prev = prevSel.current, live = liveRef.current;
+    prevSel.current = sel.id;
+    if (live.analyzed && !live.written && !st.isLocked(prev)) st.setSheet(prev, null);
+    clearLocal();
+  }, [sel.id]);
 
   const missing = REF_FIELDS.filter((f) => !fields[f.k]);
   const current = missing[0];
@@ -1320,24 +1402,34 @@ function ProductSheetAssistant({ st, locked }) {
   const dis = (on) => ({ opacity: locked ? 0.5 : 1, cursor: locked ? "not-allowed" : on ? "pointer" : "default" });
 
   return (
-    <CollapsibleSection title="Product sheet from a voice note" icon={Mic}
+    <CollapsibleSection title="Product sheet from voice, PowerPoint or screenshot" icon={Mic}
       right={<>
         <Chip color={T.accent}>{sel.name}</Chip>
         {locked && <Chip color={T.ok}>Approved - read only</Chip>}
         <button onClick={reset} disabled={locked} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS, ...dis(true) }}><RotateCcw size={12} /> Start over</button>
       </>}>
-      {/* ---- Voice note ---- */}
+      {/* ---- Input mode: voice note, PowerPoint or screenshot (simulated) ---- */}
       <div>
-        <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 12px" }}>At the end of the product brief, a voice note from the Product Manager is enough to generate the product sheet: the agent extracts the referencing details from the note, asks for the missing fields, then writes the sheet to the PLM — one continuous journey, no separate tab.</p>
+        <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 10px" }}>At the end of the product brief, the Product Manager starts the product sheet from a voice note, a PowerPoint or a screenshot: the agent extracts the referencing details it can find, asks for the missing fields, then writes the sheet to the PLM — one continuous journey. Simulation only: sample files, no real upload, no image analysis, no Centric connection.</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO, alignSelf: "center" }}>INPUT MODE</span>
+          {SHEET_MODES.map((m) => {
+            const on = mode === m.id;
+            return <button key={m.id} onClick={() => pickMode(m.id)} disabled={locked} aria-pressed={on} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: on ? T.accent : T.panel2, color: on ? "#ffffff" : T.sub, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 999, padding: "6px 13px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS, ...dis(true) }}><m.icon size={13} /> {m.label}</button>;
+          })}
+          <Chip color={T.warn}>Simulated input</Chip>
+        </div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 11, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px" }}>
-          <button onClick={() => !locked && setPlayed(true)} disabled={locked} style={{ width: 36, height: 36, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: T.accent, border: "none", ...dis(true) }}><Play size={16} color="#ffffff" /></button>
+          <button onClick={() => !locked && setPlayed(true)} disabled={locked} aria-label={mode === "voice" ? "Play the voice note" : "Open the sample file"} style={{ width: 36, height: 36, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: T.accent, border: "none", ...dis(true) }}>{mode === "voice" ? <Play size={16} color="#ffffff" /> : <modeDef.icon size={16} color="#ffffff" />}</button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>Voice note from the Product Manager · 0:42</div>
-            {played
-              ? <div style={{ fontSize: 12, color: T.sub, fontStyle: "italic", lineHeight: 1.6, marginTop: 6 }}>{transcript}</div>
-              : <div style={{ fontSize: 11.5, color: T.faint, marginTop: 4 }}>{locked ? "Offer approved — the voice note journey is frozen." : "Click play to listen and display the transcript."}</div>}
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{mode === "voice" ? "Voice note from the Product Manager · 0:42" : mode === "ppt" ? `Sample PowerPoint — “S1 2027 Baby offer · ${sel.name}.pptx” (3 slides, simulated)` : `Sample screenshot — supplier spec sheet of ${sel.name} (simulated capture)`}</div>
+            {!played
+              ? <div style={{ fontSize: 11.5, color: T.faint, marginTop: 4 }}>{locked ? "Offer approved — the product sheet journey is frozen." : mode === "voice" ? "Click play to listen and display the transcript." : "Click to open the sample file and display its content."}</div>
+              : mode === "voice"
+                ? <div style={{ fontSize: 12, color: T.sub, fontStyle: "italic", lineHeight: 1.6, marginTop: 6 }}>{transcript}</div>
+                : <div style={{ display: "grid", gap: 6, marginTop: 8 }}>{(mode === "ppt" ? pptSlides : shotLines).map(([h, t]) => <div key={h} style={{ background: T.panel, border: `1px solid ${T.lineSoft}`, borderRadius: 8, padding: "7px 10px" }}><div style={{ fontSize: 10, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>{h}</div><div style={{ fontSize: 11.5, color: T.ink, marginTop: 2 }}>{t}</div></div>)}</div>}
             {played && !analyzed && (
-              <button onClick={analyze} disabled={locked} style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 7, background: T.human, color: "#ffffff", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, fontFamily: SANS, ...dis(true) }}><Sparkles size={13} /> Analyse the voice note with the agent</button>
+              <button onClick={analyze} disabled={locked} style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 7, background: T.human, color: "#ffffff", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, fontFamily: SANS, ...dis(true) }}><Sparkles size={13} /> {mode === "voice" ? "Analyse the voice note with the agent" : mode === "ppt" ? "Extract the fields from the PowerPoint" : "Extract the fields from the screenshot"}</button>
             )}
           </div>
         </div>
@@ -1347,7 +1439,7 @@ function ProductSheetAssistant({ st, locked }) {
         <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, marginTop: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
             <ClipboardList size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>PLM product sheet</span>
-            <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.sub }}>{filled} / {REF_FIELDS.length} fields</span>
+            <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 11, color: T.sub }}>{filled} / {REF_FIELDS.length} mandatory fields · {fromSrc.size} {modeDef.from.toLowerCase()}</span>
           </div>
           <div style={{ height: 6, background: T.line, borderRadius: 99, marginBottom: 14, overflow: "hidden" }}><div style={{ width: (filled / REF_FIELDS.length) * 100 + "%", height: "100%", background: complete ? T.ok : T.accent, borderRadius: 99 }} /></div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 9 }}>
@@ -1357,7 +1449,7 @@ function ProductSheetAssistant({ st, locked }) {
                 <div key={f.k} style={{ background: T.panel2, border: `1px solid ${v ? T.line : T.warn + "66"}`, borderRadius: 10, padding: "9px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, flex: 1 }}>{f.label}</span>
-                    {v ? <Chip color={fromVocal.has(f.k) ? T.ok : T.blue}>{fromVocal.has(f.k) ? "From voice note" : "Completed"}</Chip> : <Chip color={T.warn}>Missing</Chip>}
+                    {v ? <Chip color={fromSrc.has(f.k) ? T.ok : T.blue}>{fromSrc.has(f.k) ? modeDef.from : "Completed"}</Chip> : <Chip color={T.warn}>Missing</Chip>}
                   </div>
                   {v && <div style={{ fontSize: 11, color: T.sub, fontFamily: MONO, marginTop: 5, lineHeight: 1.45, wordBreak: "break-word" }}>{v}</div>}
                 </div>
@@ -1406,7 +1498,7 @@ function ProductSheetAssistant({ st, locked }) {
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>Product sheet written to the Dassault Centric PLM</span>
                   <Chip color="#005386">PLM synced</Chip>
                 </div>
-                <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3, lineHeight: 1.45 }}>The {REF_FIELDS.length} referencing fields of “{sel.name}” ({fields.codif}) are saved — description, programme, colours, sizes, customs, category, design, fabric, process, gender, codification, label, life moment, event and BOM.</div>
+                <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3, lineHeight: 1.45 }}>Simulated write — no real PLM call. The {REF_FIELDS.length} referencing fields of “{sel.name}” ({fields.codif}, started {modeDef.from.toLowerCase()}) are saved — description, programme, colours, sizes, customs, category, design, fabric, process, gender, codification, label, life moment, event and BOM.</div>
               </div>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: MONO, fontWeight: 700, color: T.ok, background: `${T.ok}1c`, border: `1px solid ${T.ok}55`, padding: "5px 11px", borderRadius: 999, flexShrink: 0 }}><Check size={13} /> Written</span>
             </div>
@@ -4224,9 +4316,13 @@ function computeSeasonSupply(seasonColl, supplyAgent, supply, carry, kfi) {
 }
 
 /* ---- Budget revision (Monitoring): demo detail sets linked to the monitored lines ---- */
+/* Kiabi zones, weights derived from the country shares (demo): France split 60 % North / 40 % South (store-count hypothesis, counted once);
+   North = 37,2 FR + 6 BE + 3,5 PL; South = 24,8 FR + 9 ES + 5,5 IT + 2 Portugal (other countries); MENA = 2,5 MA + 6,5 franchise (Maghreb, Gulf);
+   Tropics = 3 franchise (Antilles, sub-Saharan Africa) — weights add up to 1, so zone targets add up to the line target */
+const FIN_FR_SPLIT = { North: 0.6, South: 0.4 };
 const FIN_ZONES = [
-  { n: "France", w: 0.62, idx: 1.0, dem: -0.4 }, { n: "Southern Europe", w: 0.16, idx: 1.02, dem: 0.8 },
-  { n: "Northern & Eastern Europe", w: 0.1, idx: 0.97, dem: 1.2 }, { n: "Africa & Middle East", w: 0.12, idx: 1.04, dem: 0.6 },
+  { n: "North", w: 0.467, idx: 0.99, dem: -0.2 }, { n: "South", w: 0.413, idx: 1.01, dem: 0.3 },
+  { n: "MENA", w: 0.09, idx: 1.04, dem: 0.8 }, { n: "Tropics", w: 0.03, idx: 1.02, dem: 1.0 },
 ];
 const FIN_COUNTRY_TREND = { FR: 1.0, ES: 1.03, BE: 0.99, IT: 0.95, PL: 1.06, MA: 1.04, OT: 1.02 }; /* demo landing index per country */
 const FIN_REV_TYPES = [
@@ -4812,6 +4908,7 @@ function RevisionProposal({ x, mon, month, scope, fw }) {
       <>
         <div style={{ fontSize: 11.5, color: T.sub, marginBottom: 6 }}>Level: {level}</div>
         {tbl(["Zone", "Landing", "Proposed target", "PVI (€)", "Markdown", "TMB (= TME)", "TMV"], FIN_ZONES.map((z) => { const dem = x.demRe + z.dem; return <tr key={z.n}><td style={{ ...finTd, fontWeight: 800 }}>{z.n}</td><td style={finNum}>{fr1((landing * z.w * z.idx) / zW)}</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(target * z.w)}</td><td style={finNum}>{fr2(pvm)}</td><td style={finNum}>{fr1(dem)} %</td><td style={finNum}>{fr1(tme)} %</td><td style={finNum}>{fr1(tmvModel(tme, dem))} %</td></tr>; }))}
+        <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6, lineHeight: 1.45 }}>Kiabi zones (demo weights derived from the country shares: France split 60 % North / 40 % South and counted once; MENA = Morocco + Maghreb / Gulf franchise; Tropics = Antilles and sub-Saharan Africa franchise, simulated). Zone targets add up to {fr1(target * FIN_ZONES.reduce((a2, z) => a2 + z.w, 0))} M€ = the line target.</div>
       </>
     );
   } else {
@@ -5606,11 +5703,14 @@ function OntologyPage({ st, ontology, setOntology }) {
 const STORE_SOURCE = "Simulated store feedback / sales";
 const STORE_PERIOD = "Sept. – Oct. 2026 (weeks 1-8 of FY 2026-27)";
 const STORE_MONTHS = [["Sept. 2026", 0], ["Oct. 2026", 1]]; /* indexes in PHASAGE_CA */
-const STORE_ZONES = ["France", "Southern Europe", "Northern & Eastern Europe", "Africa & Middle East"];
+const STORE_ZONES = ZONES; /* Kiabi zonier: North, South, MENA, Tropics */
+/* zones = share of the country volume in each Kiabi zone. France is split between North and South (demo hypothesis: 60 / 40 of its
+   stores and volumes, same sell-out index in both halves) and counted once in every total. No demo country is mapped to Tropics. */
 const STORE_COUNTRIES = [
-  { code: "FR", zone: "France", area: "France" }, { code: "ES", zone: "Southern Europe", area: "Iberia" }, { code: "IT", zone: "Southern Europe", area: "Italy" },
-  { code: "BE", zone: "Northern & Eastern Europe", area: "Benelux" }, { code: "PL", zone: "Northern & Eastern Europe", area: "Poland" }, { code: "MA", zone: "Africa & Middle East", area: "Morocco" },
-].map((c) => { const f = FIN_COUNTRIES.find((x) => x.code === c.code); return { ...c, name: f.name, share: f.share, stores: f.stores }; });
+  { code: "FR", zones: FIN_FR_SPLIT, area: "France" }, { code: "ES", zones: { South: 1 }, area: "Iberia" }, { code: "IT", zones: { South: 1 }, area: "Italy" },
+  { code: "BE", zones: { North: 1 }, area: "Benelux" }, { code: "PL", zones: { North: 1 }, area: "Poland" }, { code: "MA", zones: { MENA: 1 }, area: "Morocco" },
+].map((c) => { const f = FIN_COUNTRIES.find((x) => x.code === c.code); return { ...c, zone: Object.keys(c.zones).join(" / "), name: f.name, share: f.share, stores: f.stores }; });
+const storeZoneLabel = (c) => Object.entries(c.zones).map(([z, w]) => (w < 1 ? `${z} ${Math.round(w * 100)} %` : z)).join(" · ");
 /* Simulated sell-out index = sold ÷ planned units per country × offer; null = no sales data received (never read as zero) */
 const STORE_OFFER_ORDER = ["of-women-core", "of-women-lingerie", "of-women-denim", "of-men-core", "of-men-denim", "of-baby-night", "of-baby-under", "of-baby-licences", "of-girls", "of-boys", "of-capsules"];
 const STORE_SELL_INDEX = Object.fromEntries(Object.entries({
@@ -5624,11 +5724,12 @@ const STORE_SELL_INDEX = Object.fromEntries(Object.entries({
 const STORE_MONTH_TILT = [-0.02, (0.02 * PHASAGE_CA[0]) / PHASAGE_CA[1]]; /* sell-out slightly slower in September, compensated in October: same two-month total */
 function computeStoreSales(offers, { zone = "ALL", country = "ALL", category = "ALL" } = {}) {
   const phase = STORE_MONTHS.reduce((s, [, i]) => s + PHASAGE_CA[i], 0) / 100;
-  const countries = STORE_COUNTRIES.filter((c) => (zone === "ALL" || c.zone === zone) && (country === "ALL" || c.code === country));
+  /* zone filter: each country contributes its share of the zone (France 60 % North / 40 % South), so zones add up to the total */
+  const countries = STORE_COUNTRIES.filter((c) => (zone === "ALL" || c.zones[zone]) && (country === "ALL" || c.code === country)).map((c) => ({ ...c, zw: zone === "ALL" ? 1 : c.zones[zone] }));
   const prods = offers.map((o) => ({ ...o, category: o.category || FIN_OFFER_CATEGORY[o.id] })).filter((o) => category === "ALL" || o.category === category);
   const cells = [];
   countries.forEach((c) => prods.forEach((o) => {
-    const planned = o.qtes * 1e6 * phase * (c.share / 100);
+    const planned = o.qtes * 1e6 * phase * (c.share / 100) * c.zw;
     const idx = (STORE_SELL_INDEX[c.code] || {})[o.id];
     const has = idx != null;
     const months = STORE_MONTHS.map(([m, i], j) => { const p = (planned * PHASAGE_CA[i]) / 100 / phase; return { m, planned: p, sold: has ? p * (idx + STORE_MONTH_TILT[j]) : null }; });
@@ -5651,7 +5752,10 @@ function computeStoreSales(offers, { zone = "ALL", country = "ALL", category = "
   });
   const sumP = (arr, k) => arr.reduce((s, x) => s + (x[k] || 0), 0);
   const reconciled = Math.abs(sumP(products, "planned") - sumP(byCountry, "planned")) < 1 && Math.abs(sumP(products, "sold") - sumP(byCountry, "sold")) < 1 && Math.abs(sumP(months, "sold") - (total.sold || 0)) < 1;
-  return { products, countries: byCountry, total, months, reconciled, phase };
+  /* France / international split of the sold volume (France counted once, whatever its North / South split) */
+  const frSold = byCountry.filter((c) => c.code === "FR").reduce((s, c) => s + (c.sold || 0), 0);
+  const intlSold = byCountry.filter((c) => c.code !== "FR").reduce((s, c) => s + (c.sold || 0), 0);
+  return { products, countries: byCountry, total, months, reconciled, phase, noZoneData: countries.length === 0, frSold, intlSold };
 }
 /* Qualitative feedback from named demo stores: department (rayon) = category + commercial area. Each bullet points to one offer and is
    consistent with the simulated sell-out index of that store's country (strength ≈ above plan, weakness ≈ below plan). */
@@ -5671,13 +5775,13 @@ const STORE_FEEDBACK = [
   { store: "Milano Bicocca", country: "IT", category: "Kids",
     tops: [["of-girls", "Girls' back-to-school outfits (pinafore dresses, cardigans) above plan"], ["of-capsules", "Kids capsule collab visible in the window, selling on plan"]],
     flops: [["of-boys", "Boys' joggers only in dark colours: brighter colourways requested, sizes 10-14 short"]] },
-  { store: "Paris Rivoli", country: "FR", category: "Women",
+  { store: "Paris Rivoli", country: "FR", zone: "North", category: "Women",
     tops: [["of-women-core", "Blazers and straight trousers sell well to the office clientele"], ["of-women-denim", "Straight-leg denim steady, plus sizes well stocked"]],
     flops: [["of-women-lingerie", "Lingerie corner too small; 90-95 C/D sizes out of stock"]] },
-  { store: "Lille Englos", country: "FR", category: "Baby",
+  { store: "Lille Englos", country: "FR", zone: "North", category: "Baby",
     tops: [["of-baby-under", "Newborn bodysuits and first-size multipacks: strong reorders"], ["of-baby-night", "Sleep bags on plan with the early cold"]],
     flops: [["of-baby-licences", "One licence dominates the character range, the two others stagnate"]] },
-  { store: "Lyon Part-Dieu", country: "FR", category: "Men",
+  { store: "Lyon Part-Dieu", country: "FR", zone: "South", category: "Men",
     tops: [["of-men-core", "Crew-neck sweaters and oxford shirts above plan"]],
     flops: [["of-men-denim", "Slim fits judged too narrow; regular fit missing in 44-48"]] },
   { store: "Bruxelles Woluwe", country: "BE", category: "Kids",
@@ -5699,9 +5803,9 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
   const r = useMemo(() => computeStoreSales(offers, { zone, country, category }), [offers, zone, country, category]);
   const offerIds = new Set(offers.map((o) => o.id));
   const offerName = (id) => (FIN_CAT_OFFERS.find((o) => o.id === id) || {}).name || id;
-  const zoneC = STORE_COUNTRIES.filter((c) => zone === "ALL" || c.zone === zone);
+  const zoneC = STORE_COUNTRIES.filter((c) => zone === "ALL" || c.zones[zone]);
   const cats = FIN_CATEGORIES.filter((c) => offers.some((o) => (o.category || FIN_OFFER_CATEGORY[o.id]) === c.id));
-  const fb = STORE_FEEDBACK.map((f) => { const c = STORE_COUNTRIES.find((x) => x.code === f.country); return { ...f, zone: c.zone, countryName: c.name, rayon: `${f.category} ${c.area}`, tops: f.tops.filter(([id]) => offerIds.has(id)), flops: f.flops.filter(([id]) => offerIds.has(id)) }; })
+  const fb = STORE_FEEDBACK.map((f) => { const c = STORE_COUNTRIES.find((x) => x.code === f.country); return { ...f, zone: f.zone || Object.keys(c.zones)[0], countryName: c.name, rayon: `${f.category} ${c.area}`, tops: f.tops.filter(([id]) => offerIds.has(id)), flops: f.flops.filter(([id]) => offerIds.has(id)) }; })
     .filter((f) => (zone === "ALL" || f.zone === zone) && (country === "ALL" || f.country === country) && (category === "ALL" || f.category === category) && (f.tops.length || f.flops.length));
   const th = (align) => ({ textAlign: align, padding: "6px 6px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" });
   const td = { padding: "7px 6px", borderBottom: `1px solid ${T.lineSoft}`, fontSize: 12, whiteSpace: "nowrap" };
@@ -5729,7 +5833,7 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>FILTERS</span>
         <select aria-label="Zone" value={zone} onChange={(e) => { setZone(e.target.value); setCountry("ALL"); }} style={sel}>
-          <option value="ALL">All zones</option>{STORE_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+          <option value="ALL">All Kiabi zones</option>{KIABI_ZONES.map((z) => <option key={z.id} value={z.id}>{z.id} — {z.desc}</option>)}
         </select>
         <select aria-label="Country" value={country} onChange={(e) => setCountry(e.target.value)} style={sel}>
           <option value="ALL">All countries{zone === "ALL" ? "" : ` — ${zone}`}</option>{zoneC.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.stores} stores)</option>)}
@@ -5739,9 +5843,10 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
         </select>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: T.sub, cursor: "pointer" }}><input type="checkbox" checked={showPct} onChange={(e) => setShowPct(e.target.checked)} /> show gap in %</label>
       </div>
-      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10, lineHeight: 1.5 }}>Period {STORE_PERIOD}. Planned volume = annual units of the offer (financial referential) × Sept.–Oct. phasing ({pc(r.phase * 100)} of the year) × country share. Sold volume = simulated store sell-out over the same period — {STORE_SOURCE.toLowerCase()}, no BAK or point-of-sale connector. Gap = sold − planned, in units. A country that sent no sales shows "No sales data", never a zero.</div>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10, lineHeight: 1.5 }}>Period {STORE_PERIOD}. Planned volume = annual units of the offer (financial referential) × Sept.–Oct. phasing ({pc(r.phase * 100)} of the year) × country share. Sold volume = simulated store sell-out over the same period — {STORE_SOURCE.toLowerCase()}, no BAK or point-of-sale connector. Gap = sold − planned, in units. A country that sent no sales shows "No sales data", never a zero. Zones follow the Kiabi zonier (North, South, MENA, Tropics); France is split 60 % North / 40 % South of its stores and volumes (demo hypothesis) and counted once in every total.</div>
 
       <CollapsibleSection nested title="Volume gap by product" icon={Scale} sub={`${zoneLabel}${country === "ALL" ? "" : ` · ${(STORE_COUNTRIES.find((c) => c.code === country) || {}).name}`}${category === "ALL" ? "" : ` · ${category}`} · units`}>
+        {r.noZoneData && <div style={{ background: `${T.warn}12`, border: `1px solid ${T.warn}55`, borderRadius: 9, padding: "8px 11px", fontSize: 12, color: T.ink, marginBottom: 10 }}><strong>No data</strong> — no country of the demo sample is mapped to the {zone} zone{zone === "Tropics" ? " (Antilles, sub-Saharan Africa)" : ""}; nothing is attributed to it arbitrarily.</div>}
         <div style={{ overflowX: "auto", marginBottom: 12 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>{[["Product", "left"], ["Department", "left"], ["Planned volume", "right"], ["Sold volume", "right"], ["Gap", "right"]].map(([h, a]) => <th key={h} style={th(a)}>{h}</th>)}</tr></thead>
@@ -5756,7 +5861,7 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>{[["Country", "left"], ["Zone", "left"], ["Planned volume", "right"], ["Sold volume", "right"], ["Gap", "right"]].map(([h, a]) => <th key={h} style={th(a)}>{h}</th>)}</tr></thead>
             <tbody>
-              {r.countries.map((c) => <tr key={c.code} onClick={() => setCountry(country === c.code ? "ALL" : c.code)} style={{ cursor: "pointer", background: country === c.code ? `${T.accent}10` : "transparent" }}><td style={{ ...td, fontWeight: 800, color: T.ink }}>{c.name} <span style={{ fontSize: 10, color: T.faint, fontFamily: MONO }}>{c.code} · {c.stores} stores</span></td><td style={{ ...td, color: T.sub }}>{c.zone}</td>{row(c)}</tr>)}
+              {r.countries.map((c) => <tr key={c.code} onClick={() => setCountry(country === c.code ? "ALL" : c.code)} style={{ cursor: "pointer", background: country === c.code ? `${T.accent}10` : "transparent" }}><td style={{ ...td, fontWeight: 800, color: T.ink }}>{c.name} <span style={{ fontSize: 10, color: T.faint, fontFamily: MONO }}>{c.code} · {c.stores} stores</span></td><td style={{ ...td, color: T.sub }}>{storeZoneLabel(c)}{c.zw < 1 ? <span style={{ fontSize: 10, color: T.faint }}> · {zone} share shown</span> : null}</td>{row(c)}</tr>)}
               <tr style={{ background: T.panel2 }}><td style={{ ...td, fontWeight: 800, color: T.ink }} colSpan={2}>Total countries</td>{row(r.total)}</tr>
             </tbody>
           </table>
@@ -5775,12 +5880,13 @@ function StoreSubmissionsBlock({ showMonthly = false, title = "Store submissions
         )}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 10.5, color: T.faint, marginTop: 8 }}>
           <Chip color={r.reconciled ? T.ok : T.bad}>{r.reconciled ? "Σ countries = Σ products" : "Totals do not reconcile"}</Chip>
+          {r.frSold + r.intlSold > 0 && <Chip color={T.accent}>Sold volume: France {pc((r.frSold / (r.frSold + r.intlSold)) * 100)} · international {pc((r.intlSold / (r.frSold + r.intlSold)) * 100)} (50 / 50 target, France counted once)</Chip>}
           <span>* gap computed only where sales data exist (sold − planned volume of that same perimeter), so a missing country or product never counts as zero sales.</span>
         </div>
       </CollapsibleSection>
 
       <CollapsibleSection nested title="Strengths & areas for improvement" icon={MessageCircle} sub={`${fb.length} store${fb.length > 1 ? "s" : ""} · ${zoneLabel}${category === "ALL" ? "" : ` · ${category}`}`}>
-        {fb.length === 0 ? <div style={{ fontSize: 12, color: T.faint }}>No store feedback for this filter{zone === "Africa & Middle East" || country === "MA" ? " — Morocco has not sent any feedback or sales for the period" : ""}.</div> : fb.map((f) => (
+        {fb.length === 0 ? <div style={{ fontSize: 12, color: T.faint }}>No store feedback for this filter{zone === "MENA" || country === "MA" ? " — Morocco (MENA) has not sent any feedback or sales for the period" : zone === "Tropics" ? " — no demo store is mapped to the Tropics zone: No data" : ""}.</div> : fb.map((f) => (
           <div key={f.store} style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "10px 12px", marginBottom: 10, background: T.panel }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
               <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{f.store}</span>
@@ -6057,7 +6163,7 @@ export default function App() {
     isLocked: (id) => approved.has(id) && !reopened.has(id),
     isReopened: (id) => approved.has(id) && reopened.has(id),
     snapshotOf: (id) => snapshots[id],
-    reopen: (id) => { const sn = snapshots[id]; if (sn) { setAgentIds({ ...sn.agentIds }); setAgentTargets({ ...sn.agentTargets }); setTerritoire(sn.territoire); setZone(sn.zone); setColIdx(sn.colIdx); setMaterials((m) => ({ ...m, [id]: sn.materials.map((x) => ({ ...x })) })); setKpiEdits((m) => ({ ...m, [id]: { ...sn.edits } })); setScenMap((m) => ({ ...m, [id]: sn.scenId })); } setReopened((r) => new Set(r).add(id)); setNote(""); },
+    reopen: (id) => { const sn = snapshots[id]; if (sn) { setAgentIds({ ...sn.agentIds }); setAgentTargets({ ...sn.agentTargets }); setTerritoire(normTerr(sn.territoire)); setZone(normZone(sn.zone)); setColIdx(sn.colIdx); setMaterials((m) => ({ ...m, [id]: sn.materials.map((x) => ({ ...x })) })); setKpiEdits((m) => ({ ...m, [id]: { ...sn.edits } })); setScenMap((m) => ({ ...m, [id]: sn.scenId })); } setReopened((r) => new Set(r).add(id)); setNote(""); },
     setSheet: (id, info) => setSheets((m) => ({ ...m, [id]: info })),
     marketBrief, setMarketBrief, setTab: go,
   };
