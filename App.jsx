@@ -729,52 +729,8 @@ function ChefPage({ st }) {
         </div>
       </CollapsibleSection>
 
-      {/* ---- Product sheet assistant: at the end of the product brief, a voice note generates the sheet ---- */}
+      {/* ---- Product sheet assistant: voice note, PowerPoint or screenshot → product sheet → write to Centric (freezes the offer) ---- */}
       <ProductSheetAssistant st={st} locked={locked} />
-
-      {/* ---- Product development validation ---- */}
-      <CollapsibleSection title="Product development validation" icon={BadgeCheck} iconColor={T.ok} right={<Chip color={T.accent}>{sel.name}</Chip>}>
-        <p style={{ fontSize: 12, color: T.sub, lineHeight: 1.55, margin: "0 0 12px" }}>The product manager approves or rejects the development of the selected collection structure. Approval publishes the deliverables to the PLM.</p>
-        {!st.approved.has(sel.id) || st.isReopened(sel.id) ? (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            {st.isReopened(sel.id) && <span style={{ flexBasis: "100%", fontSize: 11.5, color: T.warn, fontFamily: MONO }}>Offer reopened for editing — approve again to freeze the new choices.</span>}
-            <button onClick={() => st.approve(sel.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.ok, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS }}><Check size={14} /> Approve</button>
-            <button onClick={() => st.reject(sel.id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: T.panel2, color: T.bad, border: `1px solid ${T.bad}66`, borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, fontFamily: SANS }}><X size={14} /> Reject</button>
-            {st.rejected.has(sel.id) && <span style={{ fontSize: 11.5, color: T.bad, fontFamily: MONO }}>Development rejected — sent back to design for rework.</span>}
-          </div>
-        ) : (
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-              <Check size={15} color={T.ok} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Product development finalised — deliverables available</span>
-              <Chip color={T.ok}>Approved - read only</Chip>
-              <button onClick={() => st.reopen(sel.id)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", color: T.accent, border: `1px solid ${T.accent}55`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}><Wrench size={12} /> Edit offer again</button>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", background: T.panel2, border: `1px solid #00a3c455`, borderRadius: 12, padding: "13px 16px", marginBottom: 14 }}>
-              <WhiteBadge><img src={CENTRIC_LOGO} alt="Dassault Centric" style={{ height: 30, width: "auto", display: "block" }} /></WhiteBadge>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>Deliverables published in the Dassault Centric PLM</span>
-                  <Chip color="#005386">PLM synced</Chip>
-                </div>
-                <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3, lineHeight: 1.45 }}>3D render, tech-pack and product sheet are available in the Dassault Centric project space, ready to be sent to suppliers.</div>
-              </div>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: MONO, fontWeight: 700, color: T.ok, background: `${T.ok}1c`, border: `1px solid ${T.ok}55`, padding: "5px 11px", borderRadius: 999, flexShrink: 0 }}><Check size={13} /> Available</span>
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {[
-                { icon: Box, t: "Interactive 3D render", n: "→ Opening the 3D render from the Dassault Centric PLM…" },
-                { icon: FileText, t: "Tech-pack PDF", n: "→ Tech-pack retrieved from Dassault Centric — ready to send to the supplier." },
-                { icon: BadgeCheck, t: "Ks product sheet", n: "→ Product sheet synced with Dassault Centric." },
-              ].map((d) => (
-                <button key={d.t} onClick={() => st.setNote(d.n)} style={{ flex: "1 1 180px", textAlign: "left", cursor: "pointer", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "11px 13px", display: "flex", alignItems: "center", gap: 9 }}>
-                  <d.icon size={16} color="#005386" /><span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{d.t}</span><ArrowRight size={13} color={T.faint} style={{ marginLeft: "auto" }} />
-                </button>
-              ))}
-            </div>
-            {st.note && <div style={{ marginTop: 10, fontSize: 11.5, fontFamily: MONO, color: T.sub }}>{st.note}</div>}
-          </div>
-        )}
-      </CollapsibleSection>
     </div>
   );
 }
@@ -1322,6 +1278,7 @@ function ProductSheetAssistant({ st, locked }) {
   const [fromSrc, setFromSrc] = useState(new Set());
   const [inp, setInp] = useState("");
   const [written, setWritten] = useState(false);
+  const [delivNote, setDelivNote] = useState(""); /* note of the last deliverable clicked (local, simulated) */
   const modeDef = SHEET_MODES.find((m) => m.id === mode);
 
   const REF_FIELDS = useMemo(() => ([
@@ -1377,7 +1334,7 @@ function ProductSheetAssistant({ st, locked }) {
     return Object.fromEntries(keys.map((k) => [k, all[k]]));
   };
   const analyze = () => { const f = extract(); setFields(f); setFromSrc(new Set(Object.keys(f))); setAnalyzed(true); setWritten(false); report(f, false); };
-  const clearLocal = () => { setPlayed(false); setAnalyzed(false); setFields({}); setFromSrc(new Set()); setInp(""); setWritten(false); };
+  const clearLocal = () => { setPlayed(false); setAnalyzed(false); setFields({}); setFromSrc(new Set()); setInp(""); setWritten(false); setDelivNote(""); };
   const reset = () => { clearLocal(); st.setSheet(sel.id, null); };
   /* Changing the input mode resets the analysis in progress and its shared status (nothing real is written) */
   const pickMode = (m) => { if (locked || m === mode) return; setMode(m); reset(); };
@@ -1392,13 +1349,27 @@ function ProductSheetAssistant({ st, locked }) {
     if (live.analyzed && !live.written && !st.isLocked(prev)) st.setSheet(prev, null);
     clearLocal();
   }, [sel.id]);
+  /* "Edit offer again" reopens the offer: the journey restarts so the sheet can be written again, which freezes the new choices */
+  const reopenedNow = st.isReopened(sel.id);
+  const prevReopen = useRef({ id: sel.id, on: reopenedNow });
+  useEffect(() => {
+    const was = prevReopen.current;
+    prevReopen.current = { id: sel.id, on: reopenedNow };
+    if (was.id === sel.id && !was.on && reopenedNow) { clearLocal(); st.setSheet(sel.id, null); }
+  }, [sel.id, reopenedNow]);
 
   const missing = REF_FIELDS.filter((f) => !fields[f.k]);
   const current = missing[0];
   const filled = REF_FIELDS.length - missing.length;
   const complete = analyzed && missing.length === 0;
   const answer = (v) => { if (locked || !v || !v.trim() || !current) return; const f = { ...fields, [current.k]: v.trim() }; setFields(f); setInp(""); report(f, false); };
-  const write = () => { setWritten(true); report(fields, true); };
+  /* Writing to Centric is the final step and replaces the former Approve button: it takes the approval snapshot and freezes the offer.
+     The sheet status is passed to approve() so the snapshot already carries "written" (the shared state update is asynchronous). */
+  const write = () => {
+    if (locked) return;
+    const sheet = { filled: Object.keys(fields).length, total: REF_FIELDS.length, codif: fields.codif || null, written: true, source: modeDef.from };
+    setWritten(true); st.setSheet(sel.id, sheet); st.approve(sel.id, sheet);
+  };
   const dis = (on) => ({ opacity: locked ? 0.5 : 1, cursor: locked ? "not-allowed" : on ? "pointer" : "default" });
 
   return (
@@ -1498,10 +1469,27 @@ function ProductSheetAssistant({ st, locked }) {
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>Product sheet written to the Dassault Centric PLM</span>
                   <Chip color="#005386">PLM synced</Chip>
                 </div>
+                <div style={{ fontSize: 11.5, color: T.sub, marginTop: 3, lineHeight: 1.45 }}>3D render, tech-pack and product sheet are generated with the write to the Dassault Centric PLM, ready to be sent to suppliers.</div>
                 <div style={{ fontSize: 11.5, color: T.faint, marginTop: 3, lineHeight: 1.45 }}>Simulated write — no real PLM call. The {REF_FIELDS.length} referencing fields of “{sel.name}” ({fields.codif}, started {modeDef.from.toLowerCase()}) are saved — description, programme, colours, sizes, customs, category, design, fabric, process, gender, codification, label, life moment, event and BOM.</div>
               </div>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: MONO, fontWeight: 700, color: T.ok, background: `${T.ok}1c`, border: `1px solid ${T.ok}55`, padding: "5px 11px", borderRadius: 999, flexShrink: 0 }}><Check size={13} /> Written</span>
             </div>
+          )}
+          {written && (
+            <>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                {[
+                  { icon: Box, t: "Interactive 3D render", n: "→ Opening the 3D render from the Dassault Centric PLM…" },
+                  { icon: FileText, t: "Tech-pack PDF", n: "→ Tech-pack retrieved from Dassault Centric — ready to send to the supplier." },
+                  { icon: BadgeCheck, t: "Ks product sheet", n: "→ Product sheet synced with Dassault Centric." },
+                ].map((d) => (
+                  <button key={d.t} onClick={() => setDelivNote(d.n)} style={{ flex: "1 1 180px", textAlign: "left", cursor: "pointer", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "11px 13px", display: "flex", alignItems: "center", gap: 9 }}>
+                    <d.icon size={16} color="#005386" /><span style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>{d.t}</span><ArrowRight size={13} color={T.faint} style={{ marginLeft: "auto" }} />
+                  </button>
+                ))}
+              </div>
+              {delivNote && <div style={{ marginTop: 10, fontSize: 11.5, fontFamily: MONO, color: T.sub }}>{delivNote}</div>}
+            </>
           )}
         </div>
       )}
@@ -6117,11 +6105,11 @@ export default function App() {
   }, [perfRules, collectionCO2, materials, kpiEdits, scenMap]);
 
   /* Frozen copy of every choice of an offer at approval time (per product id) */
-  const buildSnapshot = (p) => {
+  const buildSnapshot = (p, sheet) => {
     const k = kpisOf(p);
     const sc = p.scenarios.find((x) => x.id === scenIdOf(p)) || p.scenarios[0];
     const agentApplied = Object.fromEntries(AGENT_GROUPS.map((g) => [g.id, agentIds[g.id] && agentApplies(agentTargets[g.id], p) ? agentIds[g.id] : null]));
-    return { at: new Date(), name: p.name, segment: p.segment, pvi: k.pvi, volume: k.vol, revient: k.rev, marge: k.marge, co2: k.co2, lead: k.lead, territoire, zone, agentIds: { ...agentIds }, agentTargets: { ...agentTargets }, agentApplied, scenId: sc.id, scenName: sc.name, colIdx, coloris: p.coloris[colIdx] ? `${p.coloris[colIdx][0]} (${p.id.toUpperCase()}-${String(colIdx + 1).padStart(2, "0")})` : null, materials: materialsOf(p).map((m) => ({ ...m })), edits: { ...k.edited }, sheet: sheets[p.id] || null };
+    return { at: new Date(), name: p.name, segment: p.segment, pvi: k.pvi, volume: k.vol, revient: k.rev, marge: k.marge, co2: k.co2, lead: k.lead, territoire, zone, agentIds: { ...agentIds }, agentTargets: { ...agentTargets }, agentApplied, scenId: sc.id, scenName: sc.name, colIdx, coloris: p.coloris[colIdx] ? `${p.coloris[colIdx][0]} (${p.id.toUpperCase()}-${String(colIdx + 1).padStart(2, "0")})` : null, materials: materialsOf(p).map((m) => ({ ...m })), edits: { ...k.edited }, sheet: sheet !== undefined ? sheet : sheets[p.id] || null };
   };
   const setKpi = (id, f, v) => setKpiEdits((m) => { const e = { ...(m[id] || {}) }; if (v == null) delete e[f]; else e[f] = v; return { ...m, [id]: e }; });
 
@@ -6156,7 +6144,7 @@ export default function App() {
     submit: (id) => { setSubmitted((s) => new Set(s).add(id)); setReturned((s) => { const n = new Set(s); n.delete(id); return n; }); },
     validate: (id) => setValidated((s) => new Set(s).add(id)),
     sendBack: (id) => { setReturned((s) => new Set(s).add(id)); setSubmitted((s) => { const n = new Set(s); n.delete(id); return n; }); },
-    approve: (id) => { const p = PRODUITS.find((x) => x.id === id); if (p) setSnapshots((m) => ({ ...m, [id]: buildSnapshot(p) })); setApproved((s) => new Set(s).add(id)); setRejected((s) => { const n = new Set(s); n.delete(id); return n; }); setReopened((r) => { const n = new Set(r); n.delete(id); return n; }); },
+    approve: (id, sheet) => { const p = PRODUITS.find((x) => x.id === id); if (p) setSnapshots((m) => ({ ...m, [id]: buildSnapshot(p, sheet) })); setApproved((s) => new Set(s).add(id)); setRejected((s) => { const n = new Set(s); n.delete(id); return n; }); setReopened((r) => { const n = new Set(r); n.delete(id); return n; }); },
     reject: (id) => setRejected((s) => new Set(s).add(id)),
     unapprove: (id) => { setApproved((s) => { const n = new Set(s); n.delete(id); return n; }); setNote(""); },
     /* approved offers are frozen until explicitly reopened; reopening restores the snapshot choices */
