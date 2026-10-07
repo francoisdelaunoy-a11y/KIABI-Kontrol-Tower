@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Layers, Target, Leaf, Check, Wallet, TrendingUp, Tag, Boxes, GitBranch, Globe2, Factory, ClipboardList, Sparkles, ShoppingBag, Truck, Send, RotateCcw, X, Heart, Star, ArrowRight, Baby, FileText, Box, BadgeCheck, MessageCircle, Wrench, Scale, Users, Palette, Network, UserCog, Crown, Mic, Play, Database, Building2, Handshake, Award, ShieldCheck, TrendingDown, LayoutGrid, Triangle, ChevronDown } from "lucide-react";
+import { Layers, Target, Leaf, Check, Wallet, TrendingUp, Tag, Boxes, GitBranch, Globe2, Factory, ClipboardList, Sparkles, ShoppingBag, Truck, Send, RotateCcw, X, Heart, Star, ArrowRight, Baby, FileText, Box, BadgeCheck, MessageCircle, Wrench, Scale, Users, Palette, Network, UserCog, Crown, Mic, Play, Database, Building2, Handshake, Award, ShieldCheck, TrendingDown, LayoutGrid, Triangle, ChevronDown, Lock } from "lucide-react";
 
 /* ============================================================
    Theme (white background · Kiabi blues)
@@ -729,7 +729,7 @@ function ChefPage({ st }) {
         </div>
       </CollapsibleSection>
 
-      {/* ---- Product sheet assistant: voice note, PowerPoint or screenshot → product sheet → write to Centric (freezes the offer) ---- */}
+      {/* ---- Product sheet assistant: voice note, PowerPoint or screenshot → product sheet → write to Centric → explicit "Freeze design choices" ---- */}
       <ProductSheetAssistant st={st} locked={locked} />
     </div>
   );
@@ -1314,7 +1314,7 @@ function ProductSheetAssistant({ st, locked }) {
 
   const transcript = `“Hi, this is for the referencing of the ${sel.name}. For the description you can put: ${sel.name.toLowerCase()}, ${sel.compo}, S1 2027 collection. The category is ${catOf(sel.name).toLowerCase()}, knitted, unisex baby. Sizes run from 1 month to 36 months. For the colourways you have ${sel.coloris.map(([n]) => n.toLowerCase()).join(", ")}. You already know the material composition: ${sel.compo}, with polyester thread and nickel-free snaps. Can you fill in the rest in Centric for me? Thanks!”`;
 
-  /* Report the sheet progress to the shared state so an approval snapshot can freeze it */
+  /* Report the sheet progress to the shared state so the design-freeze snapshot can carry it */
   const report = (f, w) => st.setSheet(sel.id, { filled: Object.keys(f).length, total: REF_FIELDS.length, codif: f.codif || null, written: w, source: modeDef.from });
   const extract = () => {
     const all = {
@@ -1338,18 +1338,28 @@ function ProductSheetAssistant({ st, locked }) {
   const reset = () => { clearLocal(); st.setSheet(sel.id, null); };
   /* Changing the input mode resets the analysis in progress and its shared status (nothing real is written) */
   const pickMode = (m) => { if (locked || m === mode) return; setMode(m); reset(); };
-  /* Changing the selected structure clears the local analysis; an unfinished (not written) status of the previous structure is cleared too */
-  const prevSel = useRef(sel.id);
-  const liveRef = useRef({ analyzed: false, written: false, locked });
-  liveRef.current = { analyzed, written, locked };
+  /* A written sheet is restored from the state of its own product: the frozen snapshot for a locked offer, otherwise the shared sheet (fields kept per product) */
+  const restore = (id) => {
+    const sn = st.isLocked(id) ? st.snapshotOf(id) : null;
+    const sh = (sn && sn.sheet) || st.sheetOf(id);
+    if (!sh || !sh.written || !sh.fields) return;
+    if (sh.mode) setMode(sh.mode);
+    setFields({ ...sh.fields }); setFromSrc(new Set(sh.fromSrc || [])); setPlayed(true); setAnalyzed(true); setWritten(true);
+  };
+  /* Changing the selected structure clears the local analysis and restores the written sheet of the new one, if any;
+     an unfinished (not written) status of the previous structure is cleared too */
+  const prevSel = useRef(null);
+  const liveRef = useRef({ analyzed: false, written: false });
+  liveRef.current = { analyzed, written };
   useEffect(() => {
-    if (prevSel.current === sel.id) return;
     const prev = prevSel.current, live = liveRef.current;
+    if (prev === sel.id) return;
     prevSel.current = sel.id;
-    if (live.analyzed && !live.written && !st.isLocked(prev)) st.setSheet(prev, null);
-    clearLocal();
+    if (prev !== null && live.analyzed && !live.written && !st.isLocked(prev)) st.setSheet(prev, null);
+    clearLocal(); restore(sel.id);
   }, [sel.id]);
-  /* "Edit offer again" reopens the offer: the journey restarts so the sheet can be written again, which freezes the new choices */
+  /* "Edit offer again" reopens the offer: the journey and its written sheet restart; a new write gives the deliverables again,
+     but the choices are frozen only by a new click on "Freeze design choices" */
   const reopenedNow = st.isReopened(sel.id);
   const prevReopen = useRef({ id: sel.id, on: reopenedNow });
   useEffect(() => {
@@ -1363,12 +1373,21 @@ function ProductSheetAssistant({ st, locked }) {
   const filled = REF_FIELDS.length - missing.length;
   const complete = analyzed && missing.length === 0;
   const answer = (v) => { if (locked || !v || !v.trim() || !current) return; const f = { ...fields, [current.k]: v.trim() }; setFields(f); setInp(""); report(f, false); };
-  /* Writing to Centric is the final step and replaces the former Approve button: it takes the approval snapshot and freezes the offer.
-     The sheet status is passed to approve() so the snapshot already carries "written" (the shared state update is asynchronous). */
+  /* Writing to Centric (simulated) gives the deliverables but does not freeze anything: the choices stay editable.
+     The fields are kept with the shared sheet of this product so its written state can be restored when the product is selected again. */
   const write = () => {
-    if (locked) return;
-    const sheet = { filled: Object.keys(fields).length, total: REF_FIELDS.length, codif: fields.codif || null, written: true, source: modeDef.from };
-    setWritten(true); st.setSheet(sel.id, sheet); st.approve(sel.id, sheet);
+    if (locked || !complete) return;
+    const sheet = { filled: Object.keys(fields).length, total: REF_FIELDS.length, codif: fields.codif || null, written: true, source: modeDef.from, mode, fields: { ...fields }, fromSrc: [...fromSrc] };
+    setWritten(true); st.setSheet(sel.id, sheet);
+  };
+  /* Explicit freeze of the design choices, only after a write of this very product: the snapshot takes the choices at click time.
+     The written sheet is passed to approve() explicitly (the shared state update is asynchronous). */
+  const sheetHere = st.sheetOf(sel.id);
+  const writtenHere = written && !!sheetHere && sheetHere.written;
+  const freeze = () => {
+    const sh = st.sheetOf(sel.id);
+    if (!written || !sh || !sh.written || st.isLocked(sel.id)) return;
+    st.approve(sel.id, sh);
   };
   const dis = (on) => ({ opacity: locked ? 0.5 : 1, cursor: locked ? "not-allowed" : on ? "pointer" : "default" });
 
@@ -1489,6 +1508,16 @@ function ProductSheetAssistant({ st, locked }) {
                 ))}
               </div>
               {delivNote && <div style={{ marginTop: 10, fontSize: 11.5, fontFamily: MONO, color: T.sub }}>{delivNote}</div>}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                {locked ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 800, fontFamily: SANS, color: T.ok, background: `${T.ok}1c`, border: `1px solid ${T.ok}55`, padding: "8px 14px", borderRadius: 9 }}><Lock size={14} /> Design choices frozen</span>
+                ) : (
+                  <>
+                    <button onClick={freeze} disabled={!writtenHere} style={{ display: "inline-flex", alignItems: "center", gap: 8, background: T.ok, color: "#ffffff", border: "none", borderRadius: 9, padding: "10px 17px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS, opacity: writtenHere ? 1 : 0.5, cursor: writtenHere ? "pointer" : "not-allowed" }}><Lock size={15} /> Freeze design choices</button>
+                    <span style={{ fontSize: 11.5, color: T.sub }}>Product sheet written. Design choices are not frozen yet.</span>
+                  </>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -6137,14 +6166,16 @@ export default function App() {
     volOf: (p) => kpisOf(p).vol,
     scenOf: scenIdOf,
     recoFor: (p) => p.scenarios.find((x) => x.id === "mx"),
-    statutOf: (p) => (validated.has(p.id) ? "Validated" : p.statut),
+    /* Design-freeze status first ("Freeze design choices" → Validated, reopened → To develop), then the KFI price validation and the initial status */
+    statutOf: (p) => (approved.has(p.id) ? (reopened.has(p.id) ? "To develop" : "Validated") : validated.has(p.id) ? "Validated" : p.statut),
     setPvc: (id, v) => setKpi(id, "pvi", v),
     setVol: (id, v) => setKpi(id, "vol", v),
     setScen: (id, s) => setScenMap((m) => ({ ...m, [id]: s })),
     submit: (id) => { setSubmitted((s) => new Set(s).add(id)); setReturned((s) => { const n = new Set(s); n.delete(id); return n; }); },
     validate: (id) => setValidated((s) => new Set(s).add(id)),
     sendBack: (id) => { setReturned((s) => new Set(s).add(id)); setSubmitted((s) => { const n = new Set(s); n.delete(id); return n; }); },
-    approve: (id, sheet) => { const p = PRODUITS.find((x) => x.id === id); if (p) setSnapshots((m) => ({ ...m, [id]: buildSnapshot(p, sheet) })); setApproved((s) => new Set(s).add(id)); setRejected((s) => { const n = new Set(s); n.delete(id); return n; }); setReopened((r) => { const n = new Set(r); n.delete(id); return n; }); },
+    /* freezes the design choices of an offer; a frozen offer is never re-snapshotted (its date does not move) */
+    approve: (id, sheet) => { if (approved.has(id) && !reopened.has(id)) return; const p = PRODUITS.find((x) => x.id === id); if (p) setSnapshots((m) => ({ ...m, [id]: buildSnapshot(p, sheet) })); setApproved((s) => new Set(s).add(id)); setRejected((s) => { const n = new Set(s); n.delete(id); return n; }); setReopened((r) => { const n = new Set(r); n.delete(id); return n; }); },
     reject: (id) => setRejected((s) => new Set(s).add(id)),
     unapprove: (id) => { setApproved((s) => { const n = new Set(s); n.delete(id); return n; }); setNote(""); },
     /* approved offers are frozen until explicitly reopened; reopening restores the snapshot choices */
@@ -6153,6 +6184,7 @@ export default function App() {
     snapshotOf: (id) => snapshots[id],
     reopen: (id) => { const sn = snapshots[id]; if (sn) { setAgentIds({ ...sn.agentIds }); setAgentTargets({ ...sn.agentTargets }); setTerritoire(normTerr(sn.territoire)); setZone(normZone(sn.zone)); setColIdx(sn.colIdx); setMaterials((m) => ({ ...m, [id]: sn.materials.map((x) => ({ ...x })) })); setKpiEdits((m) => ({ ...m, [id]: { ...sn.edits } })); setScenMap((m) => ({ ...m, [id]: sn.scenId })); } setReopened((r) => new Set(r).add(id)); setNote(""); },
     setSheet: (id, info) => setSheets((m) => ({ ...m, [id]: info })),
+    sheetOf: (id) => sheets[id] || null,
     marketBrief, setMarketBrief, setTab: go,
   };
   const fw = { budgetGlob, setBudgetGlob, budgetDepts, setBudgetDepts, co2Glob, setCo2Glob, co2Depts, setCo2Depts, budgetFlow, setBudgetFlow, revisions, setRevisions };
