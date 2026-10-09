@@ -230,13 +230,6 @@ const BUDGET_DEPTS = [
   { n: "KFI - Kiabi Fashion Industry", resp: "KFI Director", budget: 210, demarque: 26, pvm: 13.4, tme: 59, tmv: 52.8 },
   { n: "Retail", resp: "Retail Director", budget: 420, demarque: 30, pvm: 12.7, tme: 58, tmv: 50.6 },
 ];
-/* Submissions received (bottom-up): 2 consistent, Operations with a budget gap (+15 %, total +3 %), Retail with a margin-chain inconsistency */
-const BUDGET_COPIES = [
-  { n: "Offers & Collections", budget: 1050, demarque: 27, pvm: 12.9, tme: 58, tmv: 51.5 },
-  { n: "Operations", budget: 483, demarque: 29, pvm: 12.5, tme: 57, tmv: 49.8 },
-  { n: "KFI - Kiabi Fashion Industry", budget: 210, demarque: 26, pvm: 13.4, tme: 59, tmv: 52.8 },
-  { n: "Retail", budget: 420, demarque: 30, pvm: 12.7, tme: 58, tmv: 55 },
-];
 const MOIS = ["Sept.", "Oct.", "Nov.", "Dec.", "Jan.", "Feb.", "Mar.", "Apr.", "May", "Jun.", "Jul.", "Aug."];
 const MOIS_LONG = ["September", "October", "November", "December", "January", "February", "March", "April", "May", "June", "July", "August"];
 const PHASAGE_CA = [9, 8, 9, 14, 8, 6, 7, 8, 8, 8, 9, 6];          /* % of annual budget — peaks at Christmas, back-to-school, sales */
@@ -3961,7 +3954,7 @@ function PerformancePage({ st }) {
 }
 
 /* ============================================================
-   Financial Framework — 3-step budget framing (monitoring moved to the Monitoring tab)
+   Financial Framework — Group frame + controller sandbox (monitoring lives in the Monitoring tab)
    ============================================================ */
 const IND = [
   { k: "budget", label: "Budget", unit: "M€", step: 10, fmt: (v) => `${u(v)} M€` },
@@ -4034,8 +4027,8 @@ function computeOfferBreakdown(offers, dept, glob) {
 }
 
 /* ============================================================
-   Financial Performance Leader — three linked processes:
-   budget initialisation (Group frame + four agents), season split, budget revision.
+   Financial Performance Leader — linked processes:
+   Group frame, controller sandbox (copy, exchanges, scenarios, approval) and budget revision in the Monitoring.
    Principle: the agent produces, checks and proposes; the CDG validates and signs.
    The Group frame and the final arbitration are never delegated to an agent.
    Every figure below is DEMO DATA: there is no BAK connector, nothing is read
@@ -4162,7 +4155,7 @@ function computeCountryAgent(frame, shares, dems = {}) {
 }
 
 /* ---- Collection agent (CDG Collections): four categories Men / Women / Kids / Baby, their offers, bridged to the Group ---- */
-function computeCollectionAgent(frame, offerBudgets, offerTme, offerDem = {}) {
+function computeCollectionAgent(frame, offerBudgets, offerTme, offerDem = {}, offerTmv = {}) {
   const ocShare = FIN_CAT_SHARE;
   const ocTarget = frame.budget * ocShare;
   const baseTotal = FIN_CAT_BASE;
@@ -4173,7 +4166,8 @@ function computeCollectionAgent(frame, offerBudgets, offerTme, offerDem = {}) {
     const tme = offerTme[o.id] ?? o.tme;
     const demarque = offerDem[o.id] ?? o.demarque; /* markdown proposed from the referential, editable by the CDG Collections */
     const tmvExp = tmvModel(tme, demarque);
-    return { ...o, baseBudget: o.budget, demProp: o.demarque, demarque, demEdited: offerDem[o.id] != null, proposed, budget, tme, tmvExp, tmeExp: tmeModel(o.tmv, demarque), chainOk: Math.abs(o.tmv - tmvExp) <= 1.5, edited: offerBudgets[o.id] != null || offerTme[o.id] != null || offerDem[o.id] != null };
+    const tmv = offerTmv[o.id] ?? o.tmv; /* declared TMV: referential value unless the controller restates it; the chain check compares it with tmvExp */
+    return { ...o, baseBudget: o.budget, demProp: o.demarque, demarque, demEdited: offerDem[o.id] != null, proposed, budget, tme, tmv, tmvExp, tmeExp: tmeModel(tmv, demarque), chainOk: Math.abs(tmv - tmvExp) <= 1.5, edited: offerBudgets[o.id] != null || offerTme[o.id] != null || offerDem[o.id] != null || offerTmv[o.id] != null };
   });
   const offersTotal = offers.reduce((s, o) => s + o.budget, 0);
   const colls = FIN_CATEGORIES.map((cat) => {
@@ -4259,7 +4253,7 @@ function computeSupplyAgent(coll, supply, kfi) {
   return { rows, coverage, checks, qtes: rows.reduce((s, r) => s + r.qtes, 0), purchase: rows.reduce((s, r) => s + r.purchase, 0) };
 }
 
-/* ---- Season split (S1 2027): demo seasonality and references per offer ----
+/* ---- Demo seasonality per offer, kept for the budget revision of the Monitoring (carry-over share of a line) ----
    s1 = % of the annual revenue sold in S1 · carry = % of the S1 colourway references carried over to the other seasons */
 const FIN_SEASON = {
   "of-baby-night": { s1: 44, carry: 40 }, "of-baby-under": { s1: 50, carry: 55 }, "of-baby-licences": { s1: 48, carry: 20 },
@@ -4267,71 +4261,6 @@ const FIN_SEASON = {
   "of-women-core": { s1: 53, carry: 25 }, "of-women-lingerie": { s1: 50, carry: 45 }, "of-women-denim": { s1: 50, carry: 50 },
   "of-men-core": { s1: 51, carry: 55 }, "of-men-denim": { s1: 38, carry: 40 },
 };
-const FIN_S1_DEM = -1.0; /* S1 markdown vs annual (pt); the other seasons absorb the difference so the weighted rate stays the annual one */
-function computeSeasonCollection(coll, season) {
-  const offers = coll.offers.map((o) => {
-    const d = FIN_SEASON[o.id];
-    const annual = o.budget;
-    const s1P = +((annual * d.s1) / 100).toFixed(1);
-    const inp = season[o.id] || {};
-    const s1 = inp.s1 ?? s1P, other = inp.other ?? +(annual - s1P).toFixed(1);
-    const total = s1 + other;
-    const gapPct = annual ? (total / annual - 1) * 100 : 0;
-    const demS1 = o.demarque + FIN_S1_DEM;
-    const demO = other > 0 ? (o.demarque * total - demS1 * s1) / other : o.demarque;
-    const qS = (ca, dem) => ca / (o.pvm * (1 - dem / 200));
-    const refsS1 = Math.round((o.referenceCount * d.s1) / 100);
-    const carried = Math.round((refsS1 * d.carry) / 100);
-    const refsO = o.referenceCount - refsS1 + carried;
-    return { ...o, annual, s1, other, total, gapPct, s1P, share: total ? (s1 / total) * 100 : 0, demS1, demO, tmvS1: tmvModel(o.tme, demS1), tmvO: tmvModel(o.tme, demO), qtesS1: qS(s1, demS1), qtesO: qS(other, demO), refsS1, refsO, carried, uniqueRefs: refsS1 + refsO - carried, edited: !!(inp.s1 != null || inp.other != null) };
-  });
-  const agg = (os) => {
-    const s1 = os.reduce((s, o) => s + o.s1, 0), other = os.reduce((s, o) => s + o.other, 0), annual = os.reduce((s, o) => s + o.annual, 0);
-    const w = (k, base) => os.reduce((s, o) => s + o[base] * o[k], 0) / (os.reduce((s, o) => s + o[base], 0) || 1);
-    return { s1, other, total: s1 + other, annual, pvm: w("pvm", "total"), tme: w("tme", "total"), dem: w("demarque", "total"), tmv: w("tmv", "total"), demS1: w("demS1", "s1"), qtesS1: os.reduce((s, o) => s + o.qtesS1, 0), qtesO: os.reduce((s, o) => s + o.qtesO, 0), refsS1: os.reduce((s, o) => s + o.refsS1, 0), refs: os.reduce((s, o) => s + o.uniqueRefs, 0) };
-  };
-  const depts = FIN_CATEGORIES.map((cat) => ({ name: cat.id, short: cat.id, color: cat.c, ...agg(offers.filter((o) => o.category === cat.id)) }));
-  const collByCat = Object.fromEntries(coll.colls.map((c) => [c.name, c.ca]));
-  depts.forEach((d) => { d.validated = collByCat[d.name] || 0; d.gapPct = d.validated ? (d.total / d.validated - 1) * 100 : 0; });
-  const market = agg(offers);
-  const bad = offers.filter((o) => Math.abs(o.gapPct) > FIN_TOL);
-  const badCat = depts.filter((d) => Math.abs(d.gapPct) > FIN_TOL);
-  const marketGap = coll.ocTarget ? (market.total / coll.ocTarget - 1) * 100 : 0;
-  const qtesRef = offers.filter((o) => Math.abs((o.baseBudget / o.qtes) / (o.pvm * (1 - o.demarque / 200)) - 1) > 0.03);
-  const checks = [
-    { ok: bad.length === 0, block: true, label: bad.length ? `Annual ≠ S1 + other seasons on ${bad.map((o) => `${o.name} (${sp(o.gapPct)})`).join(", ")} — tolerance ±${FIN_TOL} %` : `Every offer: S1 + other seasons = validated annual budget (±${FIN_TOL} %)` },
-    { ok: badCat.length === 0, block: true, label: badCat.length ? `Category S1 + other seasons ≠ validated category revenue on ${badCat.map((d) => `${d.name} (${sp(d.gapPct)})`).join(", ")}` : `Every category (${depts.map((d) => d.name).join(", ")}): S1 + other seasons = validated category revenue (±${FIN_TOL} %)` },
-    { ok: Math.abs(marketGap) <= FIN_TOL, block: true, label: `${FIN_CAT_PERIM}: ${fr1(market.total)} M€ annualised vs ${fr1(coll.ocTarget)} M€ validated (gap ${sp(marketGap)}) — the rest of the Group (${fr1(coll.rest)} M€) is not split here` },
-    { ok: offers.every((o) => o.share >= 20 && o.share <= 80), block: false, label: "S1 share of every offer between 20 % and 80 % of the year" },
-    { ok: qtesRef.length === 0, block: false, label: qtesRef.length ? `QTES referential off the price model on ${qtesRef.map((o) => o.name).join(", ")}` : "QTES referential consistent with revenue ÷ net price (±3 %)" },
-    { ok: true, block: false, label: "References are not added across seasons: a carried-over reference counts once in the year" },
-  ];
-  return { offers, depts, market, marketGap, checks };
-}
-/* Supply split — simulation of the "Matrice TMB" workbook: quantities × PA vs quantities × PVI, carry-over and purchase campaign */
-function computeSeasonSupply(seasonColl, supplyAgent, supply, carry, kfi) {
-  const lines = seasonColl.offers.flatMap((o) => {
-    const infl = supply[o.category] ?? FIN_PA_INFLATION[o.category] ?? 0;
-    const c = carry[o.id] ?? FIN_SEASON[o.id].carry;
-    return [["S1 2027", o.qtesS1], ["Other seasons", o.qtesO]].map(([season, qtes]) => {
-      const pa = o.pvm * (1 - o.tme / 100) * (1 + infl / 100);
-      const carryQty = (qtes * c) / 100;
-      return { id: `${o.id}-${season}`, offer: o.name, collection: o.collection, category: o.category, season, qtes, pvi: o.pvm, tmb: o.tme, pa, sales: qtes * o.pvm, purchase: qtes * pa, tmbEff: (1 - pa / o.pvm) * 100, carry: c, carryQty, newQty: qtes - carryQty, campaign: (qtes - carryQty) * pa };
-    });
-  });
-  const sum = (arr, k) => arr.reduce((s, l) => s + l[k], 0);
-  const colls = FIN_CATEGORIES.map(({ id: name }) => { const ls = lines.filter((l) => l.category === name); const target = (supplyAgent.rows.find((r) => r.name === name) || {}).purchase || 0; const purchase = sum(ls, "purchase"); return { name, short: name, qtes: sum(ls, "qtes"), purchase, target, gapPct: target ? (purchase / target - 1) * 100 : 0, campaign: sum(ls.filter((l) => l.season === "S1 2027"), "campaign"), carryQty: sum(ls, "carryQty"), tmbEff: (1 - purchase / sum(ls, "sales")) * 100 }; });
-  const s1 = lines.filter((l) => l.season === "S1 2027");
-  const babyS1 = sum(s1.filter((l) => l.category === "Baby"), "qtes"); /* KFI advice covers the Baby lines only */
-  const bad = colls.filter((c) => Math.abs(c.gapPct) > FIN_TOL);
-  const checks = [
-    { ok: bad.length === 0, block: true, label: bad.length ? `Purchase plan off the Supply/Collection budget on ${bad.map((c) => `${c.short} (${sp(c.gapPct)})`).join(", ")} — tolerance ±${FIN_TOL} %` : `Purchase plan by season = Supply/Collection purchase budget per category (±${FIN_TOL} %)` },
-    { ok: lines.every((l) => l.tmbEff - l.tmb >= -1), block: false, label: "Matrix TMB (1 − Σ QTES×PA ÷ Σ QTES×PVI) within 1 pt of the offer TMB" },
-    { ok: kfi.r.globalVerdict !== "Violation", block: false, label: `KFI advice: ${kfi.r.globalVerdict} on scenario ${kfi.sc.name} — the KFI panel sample (${mp(kfi.sc.total)}) covers ${pc((kfi.sc.total / (babyS1 * 1e6)) * 100)} of the Baby S1 volume` },
-  ];
-  return { lines, colls, checks, s1Campaign: sum(s1, "campaign"), purchase: sum(lines, "purchase"), qtes: sum(lines, "qtes") };
-}
-
 /* ---- Budget revision (Monitoring): demo detail sets linked to the monitored lines ---- */
 /* Kiabi zones, weights derived from the country shares (demo): France split 60 % North / 40 % South (store-count hypothesis, counted once);
    North = 37,2 FR + 6 BE + 3,5 PL; South = 24,8 FR + 9 ES + 5,5 IT + 2 Portugal (other countries); MENA = 2,5 MA + 6,5 franchise (Maghreb, Gulf);
@@ -4384,7 +4313,7 @@ function FinChecks({ checks }) {
     </div>
   );
 }
-function FinAgent({ title, icon, owner, kpis, gran, source, calc, status, checks, onValidate, onCancel, onReset, validateLabel, children }) {
+function FinAgent({ title, icon, owner, kpis, gran, source, calc, status, checks, onValidate, onCancel, onReset, resetLabel, validateLabel, children }) {
   const st = FIN_STATE[status.state];
   const blocked = checks.some((c) => c.block && !c.ok);
   return (
@@ -4416,7 +4345,7 @@ function FinAgent({ title, icon, owner, kpis, gran, source, calc, status, checks
                 <span style={{ fontSize: 11, color: blocked ? T.bad : T.faint }}>{blocked ? "A blocking control fails: fix the figures, the validation stays locked." : "Human validation: the agent never signs on behalf of the CDG."}</span>
               </>
             )}
-            {onReset && <KfiResetBtn onClick={onReset}>Back to the agent proposal</KfiResetBtn>}
+            {onReset && <KfiResetBtn onClick={onReset}>{resetLabel || "Back to the agent proposal"}</KfiResetBtn>}
           </div>
         </>
       )}
@@ -4424,86 +4353,502 @@ function FinAgent({ title, icon, owner, kpis, gran, source, calc, status, checks
   );
 }
 
-function BudgetModule({ fw }) {
-  const [step, setStep] = useState(1);
-  const { budgetGlob: glob, setBudgetGlob: setGlob, budgetDepts: depts, budgetFlow: flow, setBudgetFlow: setFlow } = fw; /* shared with Monitoring */
-  const [countryOpen, setCountryOpen] = useState("FR");
-  /* Editing an agent's input withdraws that agent's signature: the CDG signs again, even if the figures come back to their old values */
-  const INPUT_AGENT = { countryShares: "country", countryDem: "country", offerBudgets: "collection", offerTme: "collection", offerDem: "collection", kfiScenario: "kfi", kfiAlloc: "kfi", supply: "supply", season: "seasonColl", carry: "seasonSupply" };
-  const setF = (patch) => setFlow((f) => {
-    const p = typeof patch === "function" ? patch(f) : patch;
-    const valid = { ...(p.valid || f.valid) };
-    Object.keys(p).forEach((k) => { if (INPUT_AGENT[k] && finKey(p[k]) !== finKey(f[k])) delete valid[INPUT_AGENT[k]]; });
-    return { ...f, ...p, valid };
-  });
-  const setIn = (k, id, v) => setF((f) => ({ [k]: { ...f[k], [id]: v } }));
+/* ============================================================
+   Controller sandbox (screen 2 of the Financial Framework) — the Group controller pushes a copy of the validated frame,
+   the perimeter controllers discuss it with justified KPI proposals, scenarios are simulated and compared with the
+   existing agent engines, then the Group controller approves the retained copy, which becomes the baseline of the
+   existing Financial monitoring. The agent proposes and computes; humans explain and arbitrate.
+   Local demo state only (budgetFlow): no real AI, no message sent, no BAK / Excel connection, no external write.
+   ============================================================ */
+const FIN_GROUP_CDG = "Group controller";
+const FIN_SIM_MSG = "Simulated exchange — no message is sent; demo roles, no real person quoted";
+const FIN_PERIMS = [
+  { id: "country", label: "Countries", owner: "Country controllers" },
+  { id: "collection", label: "Collections — Men / Women / Kids / Baby", owner: "Collection controller" },
+  { id: "kfi", label: "KFI — feasibility on the Baby knitwear panel", owner: "KFI representative" },
+];
+const FIN_PERIM_OF = Object.fromEntries([...FIN_PERIMS, { id: "supply", label: "Supply/Collection impact", owner: "dependent calculation" }].map((p) => [p.id, p]));
+/* Scenario input → perimeter whose signature it withdraws (the Supply impact depends on Collection + KFI) */
+const FIN_INPUT_PERIM = { countryShares: "country", countryDem: "country", offerBudgets: "collection", offerTme: "collection", offerDem: "collection", offerTmv: "collection", kfiScenario: "kfi", kfiAlloc: "kfi", supply: "supply" };
+const FIN_PERIM_INPUTS = { country: ["countryShares", "countryDem"], collection: ["offerBudgets", "offerTme", "offerDem", "offerTmv"], kfi: ["kfiScenario", "kfiAlloc"], supply: ["supply"] };
+const FIN_THREAD_C = { proposed: T.blue, accepted: T.ok, rejected: T.bad, "to revise": T.warn };
+const finDefaultInputs = () => ({ countryShares: Object.fromEntries(FIN_COUNTRIES.map((c) => [c.code, c.share])), countryDem: {}, offerBudgets: {}, offerTme: {}, offerDem: {}, offerTmv: {}, kfiScenario: "base", kfiAlloc: {}, supply: {} });
+const finClone = (o) => JSON.parse(JSON.stringify(o));
+const finVal = (e) => (e.target.value === "" ? 0 : +e.target.value);
+const finCountryName = (code) => (FIN_COUNTRIES.find((c) => c.code === code) || {}).name || code;
+const finRouteName = (id) => (id === KFI_HORS ? "Off-panel" : (KFI_PARTNER_PLANS.find((p) => p.id === id) || {}).supplier || id);
+const finSel = { background: T.panel, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 8px", color: T.ink, fontSize: 11.5, fontFamily: SANS, fontWeight: 700, outline: "none" };
+const finSmallBtn = (c, on = true) => ({ display: "inline-flex", alignItems: "center", gap: 6, cursor: on ? "pointer" : "not-allowed", background: on ? c : T.line, color: "#ffffff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 11.5, fontWeight: 800, fontFamily: SANS });
+const finGhostBtn = { cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS };
 
-  /* Step 1 — the validated snapshot is the only reference used by the agents; any change of the live frame invalidates it */
+/* One computation of a set of scenario inputs with the existing agent engines (country, collection, KFI, Supply/Collection) */
+function finCompute(frame, inp) {
+  const country = computeCountryAgent(frame, inp.countryShares, inp.countryDem || {});
+  const coll = computeCollectionAgent(frame, inp.offerBudgets || {}, inp.offerTme || {}, inp.offerDem || {}, inp.offerTmv || {});
+  const kfi = computeKfiAgent(inp.kfiScenario, inp.kfiAlloc || {});
+  const supply = computeSupplyAgent(coll, inp.supply || {}, kfi);
+  /* consolidated rates are revenue-weighted; the retained TMV is recalculated per offer with tmvModel, the declared TMV is a control */
+  const wOf = (os, k) => { const ca = os.reduce((s, o) => s + o.budget, 0); return ca ? os.reduce((s, o) => s + o.budget * o[k], 0) / ca : 0; };
+  const cats = FIN_CATEGORIES.map((c) => { const os = coll.offers.filter((o) => o.category === c.id); return { name: c.id, color: c.c, ca: os.reduce((s, o) => s + o.budget, 0), pvm: wOf(os, "pvm"), dem: wOf(os, "demarque"), tme: wOf(os, "tme"), tmv: wOf(os, "tmvExp"), tmvDecl: wOf(os, "tmv") }; });
+  const k = {
+    frame: frame.budget, countryTotal: country.total, countryDem: country.wDem, catTotal: coll.offersTotal, rest: coll.rest, bridge: coll.bridge,
+    pvi: wOf(coll.offers, "pvm"), dem: wOf(coll.offers, "demarque"), tmb: wOf(coll.offers, "tme"), tmv: wOf(coll.offers, "tmvExp"), tmvDecl: wOf(coll.offers, "tmv"),
+    purchase: supply.purchase, qtes: supply.qtes,
+    kfiVerdict: kfi.r.globalVerdict, kfiScen: kfi.sc.name, kfiCost: kfi.r.projCost, kfiPlanCost: kfi.r.planCost, kfiAlloc: kfi.r.allocated, kfiUncovered: kfi.r.uncovered, kfiHors: kfi.r.horsPanel,
+    panelCost: (kfi.r.projCost * kfi.r.allocated) / 1e6, /* M€ on the panel sample only — never extrapolated to the Group */
+  };
+  const checks = { country: country.checks, collection: coll.checks, kfi: kfi.checks, supply: supply.checks };
+  const blocking = Object.entries(checks).flatMap(([p, cs]) => cs.filter((c) => c.block && !c.ok).map((c) => ({ p, ...c })));
+  const reserves = Object.entries(checks).flatMap(([p, cs]) => cs.map((c, i) => ({ id: `${p}:${i}`, p, ...c })).filter((c) => !c.block && !c.ok));
+  return { country, coll, kfi, supply, cats, k, checks, blocking, reserves };
+}
+/* Immutable outputs kept with a copy or an approval */
+const finSnapOut = (r) => ({
+  countries: r.country.rows.map((c) => ({ code: c.code, name: c.name, share: c.share, ca: c.ca, dem: c.dem })),
+  offers: r.coll.offers.map((o) => ({ id: o.id, name: o.name, collection: o.collection, category: o.category, budget: o.budget, demarque: o.demarque, pvm: o.pvm, tme: o.tme, tmv: o.tmvExp, tmvDecl: o.tmv })),
+  categories: r.cats.map((c) => ({ ...c })), catTotal: r.coll.offersTotal, rest: r.coll.rest, bridge: r.coll.bridge,
+  supply: r.supply.rows.map((x) => ({ name: x.name, pa: x.pa, qtes: x.qtes, purchase: x.purchase, tmbEff: x.tmbEff })),
+  kfi: { scenario: r.kfi.sc.name, verdict: r.kfi.r.globalVerdict, projCost: r.kfi.r.projCost, planCost: r.kfi.r.planCost, allocated: r.kfi.r.allocated, uncovered: r.kfi.r.uncovered, hors: r.kfi.r.horsPanel },
+  k: { ...r.k },
+});
+
+/* A proposal is a real input change of the working scenario */
+function finApplyChange(inp, ch) {
+  const n = finClone(inp);
+  if (ch.type === "countryTransfer") {
+    n.countryShares[ch.to] = +((n.countryShares[ch.to] ?? 0) + ch.pts).toFixed(2);
+    ch.from.forEach((f) => { n.countryShares[f.code] = +((n.countryShares[f.code] ?? 0) - f.pts).toFixed(2); });
+  } else if (ch.type === "offerRates") {
+    n.offerDem = { ...(n.offerDem || {}), [ch.offer]: ch.dem };
+    n.offerTme = { ...(n.offerTme || {}), [ch.offer]: ch.tme };
+    n.offerTmv = { ...(n.offerTmv || {}), [ch.offer]: tmvModel(ch.tme, ch.dem) }; /* the declared TMV follows the recalculated chain */
+  } else if (ch.type === "kfiAlloc") {
+    n.kfiScenario = ch.scenario;
+    const cur = (n.kfiAlloc || {})[ch.scenario] || {};
+    n.kfiAlloc = { ...(n.kfiAlloc || {}), [ch.scenario]: { ...cur, ...Object.fromEntries(Object.entries(ch.alloc).map(([id, kpcs]) => [id, Math.max(0, kpcs) * 1000])) } };
+  }
+  return n;
+}
+function finChangeIssues(ch) {
+  const out = [];
+  if (ch.type === "countryTransfer") {
+    const s = ch.from.reduce((a, f) => a + (+f.pts || 0), 0);
+    if (!(ch.pts > 0)) out.push("the transferred share must be positive");
+    if (Math.abs(s - ch.pts) > 0.001) out.push(`compensations ${fr2(s)} pt ≠ transfer ${fr2(ch.pts)} pt: the country total would not be conserved`);
+    if (ch.from.some((f) => f.code === ch.to)) out.push("the receiving country cannot compensate itself");
+    if (new Set(ch.from.map((f) => f.code)).size !== ch.from.length) out.push("name each compensating country once");
+  } else if (ch.type === "offerRates") {
+    if (ch.dem < 0 || ch.dem > 60) out.push("markdown outside 0–60 %");
+    if (ch.tme < 30 || ch.tme > 80) out.push("TMB (= TME) outside 30–80 %");
+  } else if (ch.type === "kfiAlloc" && !Object.keys(ch.alloc || {}).length) out.push("change at least one allocation");
+  return out;
+}
+/* Before / after on the concerned KPI and live impact recalculated with the engines */
+function finChangeView(ch, inp, frame) {
+  const r0 = finCompute(frame, inp), r1 = finCompute(frame, finApplyChange(inp, ch));
+  let kpi, before, after;
+  if (ch.type === "countryTransfer") {
+    const codes = [ch.to, ...ch.from.map((f) => f.code)];
+    const ca = (r, c) => (r.country.rows.find((x) => x.code === c) || {}).ca || 0;
+    kpi = `Country revenue envelope — ${finCountryName(ch.to)} +${fr2(ch.pts)} pt of the frame, compensated by ${ch.from.map((f) => `${finCountryName(f.code)} −${fr2(f.pts)} pt`).join(", ")}`;
+    before = codes.map((c) => `${finCountryName(c)} ${fr1(ca(r0, c))} M€`).join(" · ");
+    after = codes.map((c) => `${finCountryName(c)} ${fr1(ca(r1, c))} M€ (${sg(ca(r1, c) - ca(r0, c))})`).join(" · ");
+  } else if (ch.type === "offerRates") {
+    const o0 = r0.coll.offers.find((o) => o.id === ch.offer) || {}, o1 = r1.coll.offers.find((o) => o.id === ch.offer) || {};
+    kpi = `Markdown and TMB (= TME) — ${o0.name} (${o0.category})`;
+    const txt = (o) => `markdown ${fr1(o.demarque)} % · TMB ${fr1(o.tme)} % · TMV recalculated ${fr1(o.tmvExp)} % (declared ${fr1(o.tmv)} %)`;
+    before = txt(o0); after = txt(o1);
+  } else {
+    const ids = Object.keys(ch.alloc || {});
+    const al = (r, id) => (id === KFI_HORS ? r.kfi.r.horsPanel : (r.kfi.r.partners.find((p) => p.id === id) || {}).alloc || 0);
+    kpi = `Panel allocation — ${ids.map(finRouteName).join(", ")} (scenario ${r1.kfi.sc.name})`;
+    before = `${r0.kfi.sc.name}: ${ids.map((id) => `${finRouteName(id)} ${kp(al(r0, id))}`).join(" · ")}`;
+    after = `${r1.kfi.sc.name}: ${ids.map((id) => `${finRouteName(id)} ${kp(al(r1, id))}`).join(" · ")}`;
+  }
+  const impact = [];
+  const d = (label, a, b, f) => { if (Math.abs(b - a) > 0.004) impact.push(`${label} ${f(a)} → ${f(b)}`); };
+  const M = (v) => `${fr1(v)} M€`, P = (v) => `${fr1(v)} %`, E = (v) => `${fr2(v)} €/pc`;
+  d("Total countries", r0.k.countryTotal, r1.k.countryTotal, M); d("country markdown (weighted)", r0.k.countryDem, r1.k.countryDem, P);
+  d("four categories", r0.k.catTotal, r1.k.catTotal, M); d("markdown (weighted)", r0.k.dem, r1.k.dem, P); d("TMB (= TME) (weighted)", r0.k.tmb, r1.k.tmb, P);
+  d("TMV recalculated (weighted)", r0.k.tmv, r1.k.tmv, P); d("purchases (four categories)", r0.k.purchase, r1.k.purchase, M);
+  d("panel projected cost", r0.k.kfiCost, r1.k.kfiCost, E); d("panel purchase cost (panel only)", r0.k.panelCost, r1.k.panelCost, (v) => `${fr2(v)} M€`);
+  if (r0.k.kfiVerdict !== r1.k.kfiVerdict) impact.push(`KFI verdict ${r0.k.kfiVerdict} → ${r1.k.kfiVerdict}`);
+  if (r0.blocking.length !== r1.blocking.length) impact.push(`blocking controls ${r0.blocking.length} → ${r1.blocking.length}`);
+  if (r0.reserves.length !== r1.reserves.length) impact.push(`reserves to arbitrate ${r0.reserves.length} → ${r1.reserves.length}`);
+  return { kpi, before, after, impact };
+}
+
+/* KPI table of a perimeter: copy (initial) · proposed by the perimeter (open proposals) · retained (working scenario) · gap · status */
+function finPerimRows(perim, a, p, r) {
+  const M = (v) => `${fr1(v)} M€`, P = (v) => `${fr1(v)} %`, E = (v) => `${fr2(v)} €/pc`, K = (v) => kp(v), Q = (v) => `${fr1(v)} M pcs`;
+  const row = (label, get, fmt, unit) => ({ label, fmt, unit, a: get(a), p: p ? get(p) : null, r: get(r) });
+  const cat = (x, n) => x.cats.find((c) => c.name === n);
+  if (perim === "country") return [
+    ...FIN_COUNTRIES.map((c) => row(`Revenue — ${c.name}`, (x) => x.country.rows.find((y) => y.code === c.code).ca, M, "M€")),
+    row("Total countries (reading of the Group frame)", (x) => x.country.total, M, "M€"),
+    row("Markdown — revenue-weighted", (x) => x.country.wDem, P, "pt"),
+  ];
+  if (perim === "collection") return [
+    ...FIN_CATEGORIES.map((c) => row(`Revenue — ${c.id}`, (x) => cat(x, c.id).ca, M, "M€")),
+    row("Four categories (Offers & Collections)", (x) => x.coll.offersTotal, M, "M€"),
+    row("Other Group revenue — bridge", (x) => x.coll.rest, M, "M€"),
+    row("Group bridge (four categories + rest)", (x) => x.coll.bridge, M, "M€"),
+    row("PVI — revenue-weighted", (x) => x.k.pvi, E, "€"),
+    row("Markdown — revenue-weighted", (x) => x.k.dem, P, "pt"),
+    row("TMB (= TME) — revenue-weighted", (x) => x.k.tmb, P, "pt"),
+    row("TMV recalculated (tmvModel, revenue-weighted)", (x) => x.k.tmv, P, "pt"),
+    row("TMV declared — control", (x) => x.k.tmvDecl, P, "pt"),
+  ];
+  if (perim === "kfi") return [
+    row("Allocated on the panel", (x) => x.k.kfiAlloc, K, "pcs"),
+    row("Uncovered RELEX demand", (x) => x.k.kfiUncovered, K, "pcs"),
+    row("Off-panel", (x) => x.k.kfiHors, K, "pcs"),
+    row("Projected cost / PA (panel)", (x) => x.k.kfiCost, E, "€"),
+    row("Panel purchase cost (allocated × cost, panel only)", (x) => x.k.panelCost, (v) => `${fr2(v)} M€`, "M€2"),
+    { label: "KFI verdict", text: true, fmt: (v) => v, a: a.k.kfiVerdict, p: p ? p.k.kfiVerdict : null, r: r.k.kfiVerdict },
+  ];
+  return [
+    ...FIN_CATEGORIES.map((c) => row(`Purchases — ${c.id}`, (x) => x.supply.rows.find((y) => y.name === c.id).purchase, M, "M€")),
+    row("Purchases — four categories", (x) => x.supply.purchase, M, "M€"),
+    row("QTES — four categories", (x) => x.supply.qtes, Q, "Mpcs"),
+    ...FIN_CATEGORIES.map((c) => row(`Effective TMB after PA drift — ${c.id}`, (x) => x.supply.rows.find((y) => y.name === c.id).tmbEff, P, "pt")),
+  ];
+}
+const finGap = (unit, d) => (unit === "pt" ? `${sg(d)} pt` : unit === "€" ? `${sg(d, 2)} €` : unit === "pcs" ? `${sg(d / 1000, 0)} kpcs` : unit === "Mpcs" ? `${sg(d)} M pcs` : unit === "M€2" ? `${sg(d, 2)} M€` : `${sg(d)} M€`);
+function FinKpiTable({ rows, v }) {
+  const same = (x, y) => (typeof x === "number" ? Math.abs(x - y) < 0.005 : x === y);
+  return (
+    <div style={{ overflowX: "auto", marginBottom: 10 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead><tr>{["KPI", `Copy V${v} (initial)`, "Proposed by the perimeter", "Retained (scenario)", "Gap vs copy", "Status"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
+        <tbody>
+          {rows.map((x) => {
+            const open = x.p != null && !same(x.p, x.r);
+            const changed = !same(x.r, x.a);
+            return (
+              <tr key={x.label}>
+                <td style={{ ...finTd, whiteSpace: "normal" }}>{x.label}</td>
+                <td style={finNum}>{x.fmt(x.a)}</td>
+                <td style={{ ...finNum, color: open ? T.blue : T.faint }}>{open ? x.fmt(x.p) : "—"}</td>
+                <td style={{ ...finNum, fontWeight: 800 }}>{x.fmt(x.r)}</td>
+                <td style={{ ...finNum, color: changed ? T.human : T.faint }}>{x.text ? (changed ? "changed" : "—") : changed ? finGap(x.unit, x.r - x.a) : "—"}</td>
+                <td style={{ ...finTd, textAlign: "right" }}><Chip color={open ? T.blue : changed ? T.human : T.faint}>{open ? "Open proposal" : changed ? "Changed vs copy" : "Unchanged"}</Chip></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* Editor of a proposed change (used to create or revise a proposal) */
+function FinChangeEditor({ ch, setCh, res, inp }) {
+  const lbl = { fontSize: 11.5, color: T.sub };
+  if (ch.type === "countryTransfer") return (
+    <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+      <span style={lbl}>Raise</span>
+      <select aria-label="Receiving country" value={ch.to} onChange={(e) => setCh({ ...ch, to: e.target.value })} style={finSel}>{FIN_COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
+      <span style={lbl}>by</span>
+      <input type="number" step={0.1} aria-label="Transferred share (pt)" value={ch.pts} onChange={(e) => setCh({ ...ch, pts: finVal(e) })} style={{ ...finInp, width: 62 }} />
+      <span style={lbl}>pt of the frame ({fr1((res.k.frame * ch.pts) / 100)} M€), compensated by</span>
+      {ch.from.map((f, i) => (
+        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <select aria-label={`Compensating country ${i + 1}`} value={f.code} onChange={(e) => setCh({ ...ch, from: ch.from.map((x, j) => (j === i ? { ...x, code: e.target.value } : x)) })} style={finSel}>{FIN_COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
+          <input type="number" step={0.1} aria-label={`Compensation ${i + 1} (pt)`} value={f.pts} onChange={(e) => setCh({ ...ch, from: ch.from.map((x, j) => (j === i ? { ...x, pts: finVal(e) } : x)) })} style={{ ...finInp, width: 58 }} /><span style={lbl}>pt ({fr1((res.k.frame * f.pts) / 100)} M€)</span>
+          {ch.from.length > 1 && <button onClick={() => setCh({ ...ch, from: ch.from.filter((_, j) => j !== i) })} aria-label={`Remove compensating country ${i + 1}`} style={{ ...finGhostBtn, padding: "2px 7px" }}>×</button>}
+        </span>
+      ))}
+      <button onClick={() => setCh({ ...ch, from: [...ch.from, { code: FIN_COUNTRIES.find((c) => c.code !== ch.to && !ch.from.some((f) => f.code === c.code)).code, pts: 0 }] })} style={finGhostBtn}>+ compensating country</button>
+    </div>
+  );
+  if (ch.type === "offerRates") {
+    const o = res.coll.offers.find((x) => x.id === ch.offer) || res.coll.offers[0];
+    return (
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+        <select aria-label="Offer" value={ch.offer} onChange={(e) => { const n = res.coll.offers.find((x) => x.id === e.target.value); setCh({ ...ch, offer: n.id, dem: n.demarque, tme: n.tme }); }} style={finSel}>{res.coll.offers.map((x) => <option key={x.id} value={x.id}>{x.category} · {x.name}</option>)}</select>
+        <span style={lbl}>markdown</span><input type="number" step={0.5} aria-label="Proposed markdown (%)" value={ch.dem} onChange={(e) => setCh({ ...ch, dem: finVal(e) })} style={{ ...finInp, width: 58 }} /><span style={lbl}>% (now {fr1(o.demarque)} %)</span>
+        <span style={lbl}>TMB (= TME)</span><input type="number" step={0.5} aria-label="Proposed TMB (%)" value={ch.tme} onChange={(e) => setCh({ ...ch, tme: finVal(e) })} style={{ ...finInp, width: 58 }} /><span style={lbl}>% (now {fr1(o.tme)} %)</span>
+        <Chip color={T.human}>TMV recalculated {fr1(tmvModel(ch.tme, ch.dem))} % (now {fr1(o.tmvExp)} %, declared {fr1(o.tmv)} %)</Chip>
+      </div>
+    );
+  }
+  const k = computeKfiAgent(ch.scenario, inp.kfiAlloc || {});
+  const routes = [...k.r.partners.map((p) => [p.id, p.alloc]), [KFI_HORS, k.r.horsPanel]];
+  return (
+    <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+      <span style={lbl}>Scenario {k.sc.name} · allocation in kpcs (panel sample):</span>
+      {routes.map(([id, cur]) => (
+        <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span style={lbl}>{finRouteName(id)}</span>
+          <input type="number" step={5} aria-label={`Proposed allocation ${id}`} value={ch.alloc[id] ?? Math.round(cur / 1000)} onChange={(e) => setCh({ ...ch, alloc: { ...ch.alloc, [id]: finVal(e) } })} style={{ ...finInp, width: 62, borderColor: ch.alloc[id] != null ? T.human : undefined }} />
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/* One entry of the negotiation thread */
+function FinProposal({ t, view, actionable, lockMsg, scenName, res, inp, onAccept, onReject, onRevision, onRevise }) {
+  const [note, setNote] = useState("");
+  const [edit, setEdit] = useState(null);
+  const c = FIN_THREAD_C[t.status];
+  const open = t.status === "proposed" || t.status === "to revise";
+  const issues = finChangeIssues(t.change);
+  const reasonOk = !!(t.reason || "").trim();
+  const editIssues = edit ? finChangeIssues(edit.change) : [];
+  return (
+    <div data-proposal={t.id} style={{ background: T.panel, border: `1px solid ${c}55`, borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 800, color: T.ink }}>{t.id}</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{t.author}</span>
+        <Chip color={T.silver}>{FIN_PERIM_OF[t.perim].label}</Chip>
+        <Chip color={c}>{t.status}</Chip>
+        <span style={{ marginLeft: "auto", fontSize: 10.5, fontFamily: MONO, color: T.faint }}>copy V{t.copyV} · scenario {scenName} · {t.at}</span>
+      </div>
+      <div style={{ fontSize: 11.5, color: T.ink, marginTop: 6, fontWeight: 700 }}>KPI: {t.kpi}</div>
+      <div style={{ fontSize: 11.5, color: T.sub, marginTop: 3, lineHeight: 1.45 }}>Before: {t.before}<br />After: {t.after}</div>
+      <div style={{ fontSize: 11.5, color: reasonOk ? T.ink : T.bad, marginTop: 5, lineHeight: 1.45 }}><strong>Justification —</strong> {reasonOk ? t.reason : "empty: the proposal cannot be finalised"}</div>
+      {view && <div style={{ fontSize: 11, color: T.sub, marginTop: 4, lineHeight: 1.45 }}><strong>Impact recalculated by the agent{t.status === "accepted" ? " (as applied)" : ""} —</strong> {view.impact.length ? view.impact.join(" · ") : "no KPI moves"}</div>}
+      {issues.length > 0 && open && <div style={{ fontSize: 11, color: T.bad, marginTop: 4 }}>Blocking: {issues.join(" · ")}</div>}
+      {t.log.length > 0 && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 5, fontFamily: MONO, lineHeight: 1.5 }}>{t.log.map((l, i) => <div key={i}>{l.at} · {l.by} · {l.action}{l.note ? ` — “${l.note}”` : ""}</div>)}</div>}
+      <div style={{ fontSize: 10, color: T.faint, marginTop: 4, fontStyle: "italic" }}>{FIN_SIM_MSG}</div>
+      {open && !actionable && <div style={{ fontSize: 11, color: T.warn, marginTop: 6 }}>{lockMsg}</div>}
+      {open && actionable && !edit && (
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${T.line}` }}>
+          <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>{FIN_GROUP_CDG.toUpperCase()}</span>
+          <input value={note} onChange={(e) => setNote(e.target.value)} aria-label={`Decision note ${t.id}`} placeholder="Decision note (required to reject or ask for a revision)" style={{ ...finSel, flex: "1 1 220px", fontWeight: 400 }} />
+          <button onClick={() => { onAccept(note); setNote(""); }} disabled={!reasonOk || issues.length > 0} style={finSmallBtn(T.ok, reasonOk && !issues.length)}><Check size={13} /> Accept & apply</button>
+          <button onClick={() => { onRevision(note); setNote(""); }} disabled={!note.trim()} style={finSmallBtn(T.warn, !!note.trim())}>Request revision</button>
+          <button onClick={() => { onReject(note); setNote(""); }} disabled={!note.trim()} style={finSmallBtn(T.bad, !!note.trim())}><X size={13} /> Reject</button>
+          <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint, marginLeft: 8 }}>{t.role.toUpperCase()}</span>
+          <button onClick={() => setEdit({ change: finClone(t.change), reason: t.reason })} style={finGhostBtn}>Revise the proposal</button>
+        </div>
+      )}
+      {edit && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${T.line}`, display: "grid", gap: 7 }}>
+          <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>{t.role.toUpperCase()} — REVISED PROPOSAL</span>
+          <FinChangeEditor ch={edit.change} setCh={(ch) => setEdit({ ...edit, change: ch })} res={res} inp={inp} />
+          <textarea value={edit.reason} onChange={(e) => setEdit({ ...edit, reason: e.target.value })} aria-label={`Revised justification ${t.id}`} rows={2} style={{ ...finSel, fontWeight: 400, width: "100%", boxSizing: "border-box" }} />
+          {editIssues.length > 0 && <div style={{ fontSize: 11, color: T.bad }}>{editIssues.join(" · ")}</div>}
+          <div style={{ display: "flex", gap: 7 }}>
+            <button onClick={() => { onRevise(edit.change, edit.reason.trim()); setEdit(null); }} disabled={!edit.reason.trim() || editIssues.length > 0} style={finSmallBtn(T.human, !!edit.reason.trim() && !editIssues.length)}>Submit the revision</button>
+            <button onClick={() => setEdit(null)} style={finGhostBtn}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* New proposal form: a perimeter controller states a KPI change and its reason */
+function FinNewProposal({ res, inp, onSubmit, disabled }) {
+  const defOf = (p) => (p === "country" ? { type: "countryTransfer", to: "PL", pts: 0.5, from: [{ code: "FR", pts: 0.5 }] } : p === "collection" ? (() => { const o = res.coll.offers[0]; return { type: "offerRates", offer: o.id, dem: o.demarque, tme: o.tme }; })() : { type: "kfiAlloc", scenario: inp.kfiScenario, alloc: {} });
+  const [perim, setPerim] = useState("country");
+  const [ch, setCh] = useState(() => defOf("country"));
+  const [reason, setReason] = useState("");
+  const issues = finChangeIssues(ch);
+  const ok = !disabled && !!reason.trim() && !issues.length;
+  return (
+    <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 10, padding: "10px 12px", marginBottom: 10, display: "grid", gap: 7 }}>
+      <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>NEW PROPOSAL BY</span>
+        <select aria-label="Proposal perimeter" value={perim} onChange={(e) => { setPerim(e.target.value); setCh(defOf(e.target.value)); }} style={finSel}>{FIN_PERIMS.map((p) => <option key={p.id} value={p.id}>{p.owner} — {p.label}</option>)}</select>
+      </div>
+      <FinChangeEditor ch={ch} setCh={setCh} res={res} inp={inp} />
+      <textarea value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Justification of the proposal" placeholder="Why this change? (required — an empty justification cannot finalise a change)" rows={2} style={{ ...finSel, fontWeight: 400, width: "100%", boxSizing: "border-box" }} />
+      {issues.length > 0 && <div style={{ fontSize: 11, color: T.bad }}>{issues.join(" · ")}</div>}
+      <div><button onClick={() => { onSubmit({ perim, change: ch, reason: reason.trim() }); setReason(""); }} disabled={!ok} style={finSmallBtn(T.human, ok)}><Send size={13} /> Submit the proposal</button> <span style={{ fontSize: 10.5, color: T.faint }}>{FIN_SIM_MSG}</span></div>
+    </div>
+  );
+}
+
+/* A non-blocking reserve needs an explicit decision and a justification from the Group controller */
+function FinReserve({ r, dec, onRecord }) {
+  const [d, setD] = useState(dec ? dec.decision : "Accepted with reserve");
+  const [why, setWhy] = useState(dec ? dec.reason : "");
+  return (
+    <div data-reserve={r.id} style={{ background: T.panel, border: `1px solid ${dec ? T.ok : T.warn}55`, borderRadius: 9, padding: "8px 11px", marginBottom: 6 }}>
+      <div style={{ fontSize: 11.5, color: T.ink, lineHeight: 1.45 }}><Chip color={T.silver}>{FIN_PERIM_OF[r.p].label}</Chip> {r.label}</div>
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+        <select aria-label={`Decision ${r.id}`} value={d} onChange={(e) => setD(e.target.value)} style={finSel}><option>Accepted with reserve</option><option>Mitigation plan required</option></select>
+        <input value={why} onChange={(e) => setWhy(e.target.value)} aria-label={`Justification ${r.id}`} placeholder="Justification (required)" style={{ ...finSel, flex: "1 1 240px", fontWeight: 400 }} />
+        <button onClick={() => onRecord(d, why.trim())} disabled={!why.trim()} style={finSmallBtn(T.accent, !!why.trim())}>Record the decision</button>
+        {dec ? <Chip color={T.ok}>{dec.decision} · {dec.at}</Chip> : <Chip color={T.warn}>Decision required</Chip>}
+      </div>
+    </div>
+  );
+}
+
+function BudgetModule({ fw, openMonitoring }) {
+  /* coming back to the tab reopens the sandbox once a copy exists (its state lives in budgetFlow, nothing is regenerated) */
+  const [step, setStep] = useState(() => ((fw.budgetFlow.copies || []).length ? 2 : 1));
+  const { budgetGlob: glob, setBudgetGlob: setGlob, budgetFlow: flow, setBudgetFlow: setFlow } = fw; /* shared with Monitoring */
+  const [countryOpen, setCountryOpen] = useState("FR");
+  const [scenName, setScenName] = useState("");
+  const [scenSrc, setScenSrc] = useState("copy");
+  const setF = (patch) => setFlow((f) => ({ ...f, ...(typeof patch === "function" ? patch(f) : patch) }));
+
+  /* Screen 1 — the validated snapshot is the only reference of the sandbox; any change of the live frame invalidates it */
   const frame = flow.frame;
   const frameValid = !!frame && IND.every((i) => frame.snap[i.k] === glob[i.k]);
   const validateGlobal = () => { setF({ frame: { at: finNow(), snap: { ...glob } } }); setStep(2); };
   const setG = (k, v) => setGlob((g) => ({ ...g, [k]: v }));
   const num = (e) => (e.target.value === "" ? 0 : +e.target.value);
   const ref = frame ? frame.snap : glob;
-
-  /* Agents: pure functions on the validated frame and each CDG's inputs */
-  const country = useMemo(() => computeCountryAgent(ref, flow.countryShares, flow.countryDem || {}), [ref, flow.countryShares, flow.countryDem]);
-  const coll = useMemo(() => computeCollectionAgent(ref, flow.offerBudgets, flow.offerTme, flow.offerDem || {}), [ref, flow.offerBudgets, flow.offerTme, flow.offerDem]);
-  const kfi = useMemo(() => computeKfiAgent(flow.kfiScenario, flow.kfiAlloc || {}), [flow.kfiScenario, flow.kfiAlloc]);
-  const setAlloc = (id, kpcs) => setF((f) => ({ kfiAlloc: { ...(f.kfiAlloc || {}), [f.kfiScenario]: { ...((f.kfiAlloc || {})[f.kfiScenario] || {}), [id]: Math.max(0, kpcs) * 1000 } } }));
-  const allocCell = (id, v, color) => (
-    <td style={finNum}>
-      <input type="number" step={5} aria-label={`Allocated ${id}`} value={Math.round(v / 1000)} onChange={(e) => setAlloc(id, num(e))} style={{ ...finInp, width: 70, color: color || T.ink, borderColor: kfi.edits[id] != null ? T.human : undefined }} /> <span style={{ fontSize: 10, color: T.faint }}>kpcs</span>
-      {kfi.edits[id] != null && <div style={{ fontSize: 9.5, color: T.faint, fontFamily: MONO }}>prop. {kp(kfi.proposed[id])}</div>}
-    </td>
-  );
-  const supply = useMemo(() => computeSupplyAgent(coll, flow.supply, kfi), [coll, flow.supply, kfi]);
-  const sColl = useMemo(() => computeSeasonCollection(coll, flow.season), [coll, flow.season]);
-  const sSup = useMemo(() => computeSeasonSupply(sColl, supply, flow.supply, flow.carry, kfi), [sColl, supply, flow.supply, flow.carry, kfi]);
-
-  /* A validation is valid only while its inputs and the upstream keys are unchanged (key comparison) */
   const fk = frameValid ? finKey([frame.at, frame.snap]) : null;
+
+  /* Screen 2 — copy versions, working scenarios, negotiation thread and approvals, all kept in budgetFlow (App level) */
+  const copies = flow.copies || [], scenarios = flow.scenarios || [], thread = flow.thread || [], approvals = flow.approvals || [];
+  const copy = copies[copies.length - 1] || null;
+  const copyCurrent = !!copy && copy.fk === fk; /* a changed Group frame makes the copy obsolete until it is validated and pushed again */
+  const copyScens = copy ? scenarios.filter((x) => x.copyV === copy.v) : [];
+  const scen = copyScens.find((x) => x.id === flow.activeScen) || copyScens[0] || null;
+  const cmpScen = copyScens.find((x) => x.id === flow.compareScen && (!scen || x.id !== scen.id)) || null;
+  const cref = copy ? copy.frameSnap : ref;
+  const inp = scen ? scen.inputs : copy ? copy.inputs : finDefaultInputs();
+  const res = useMemo(() => finCompute(cref, inp), [cref, inp]);
+  const base = useMemo(() => (copy ? finCompute(copy.frameSnap, copy.inputs) : null), [copy]);
+  const cmp = useMemo(() => (cmpScen ? finCompute(cref, cmpScen.inputs) : null), [cref, cmpScen]);
+  const editable = !!scen && copyCurrent;
+  const { country, coll, kfi, supply } = res;
+
+  /* Signatures: a perimeter validation covers its inputs and dependencies, for one copy version and one scenario (finKey) */
+  const sk = copy && scen ? finKey([fk, copy.v, scen.id]) : null;
   const keys = {};
-  keys.country = finKey([fk, flow.countryShares, flow.countryDem || {}]);
-  keys.collection = finKey([fk, flow.offerBudgets, flow.offerTme, flow.offerDem || {}]); /* the 2 years plan projections (flow.horizonEdits) never enter a key */
-  keys.kfi = finKey([fk, flow.kfiScenario, (flow.kfiAlloc || {})[flow.kfiScenario] || {}]);
-  keys.supply = finKey([keys.collection, keys.kfi, flow.supply]);
-  keys.seasonColl = finKey([keys.country, keys.supply, flow.season]);
-  keys.seasonSupply = finKey([keys.seasonColl, flow.carry]);
-  keys.arbitration = finKey([keys.seasonSupply]);
-  const isValid = (id) => frameValid && flow.valid[id] && flow.valid[id].key === keys[id];
-  const statusOf = (id, prereq = [], prereqMsg = "") => {
-    if (!frameValid) return { state: "waiting", reason: frame ? "The Group frame changed since its validation: validate it again in step 1." : "Validate the Group frame in step 1 first: the agents only work on the validated snapshot." };
-    const missing = prereq.filter((p) => !isValid(p));
-    if (missing.length) return { state: "waiting", reason: prereqMsg };
-    const v = flow.valid[id];
+  keys.country = finKey([sk, inp.countryShares, inp.countryDem || {}]);
+  keys.collection = finKey([sk, inp.offerBudgets || {}, inp.offerTme || {}, inp.offerDem || {}, inp.offerTmv || {}]);
+  keys.kfi = finKey([sk, inp.kfiScenario, (inp.kfiAlloc || {})[inp.kfiScenario] || {}]);
+  keys.supply = finKey([keys.collection, keys.kfi, inp.supply || {}]);
+  const vKey = (id) => `${scen ? scen.id : "-"}|${id}`;
+  const isValid = (id) => frameValid && copyCurrent && !!scen && !!flow.valid[vKey(id)] && flow.valid[vKey(id)].key === keys[id];
+  const statusOf = (id) => {
+    if (!frameValid) return { state: "waiting", reason: frame ? "The Group frame changed since its validation: validate it again on screen 1, then push a new copy." : "Validate the Group frame on screen 1 first." };
+    if (!copy) return { state: "waiting", reason: "The Group controller has not pushed the initial copy yet." };
+    if (!copyCurrent) return { state: "waiting", reason: `Copy V${copy.v} is obsolete: the Group frame was validated again — push a new copy.` };
+    const v = flow.valid[vKey(id)];
     if (v && v.key === keys[id]) return { state: "validated", at: v.at };
     return { state: v ? "stale" : "proposed" };
   };
-  const validate = (id, by) => setF((f) => ({ valid: { ...f.valid, [id]: { key: keys[id], at: finNow(), by } } }));
-  const cancel = (id) => setF((f) => { const v = { ...f.valid }; delete v[id]; return { valid: v }; });
-  const s = {
-    country: statusOf("country"),
-    collection: statusOf("collection"),
-    kfi: statusOf("kfi"),
-    supply: statusOf("supply", ["collection", "kfi"], "Needs the Collection agent and the KFI agent validated: the Supply/Collection agent consumes both."),
-    seasonColl: statusOf("seasonColl", ["country", "collection", "kfi", "supply"], "Needs the four Breakdown agents validated (step 2)."),
-    seasonSupply: statusOf("seasonSupply", ["seasonColl"], "Needs the Collection split validated first."),
+  const validate = (id, by) => editable && setFlow((f) => ({ ...f, valid: { ...f.valid, [vKey(id)]: { key: keys[id], at: finNow(), by } } }));
+  const cancel = (id) => setFlow((f) => { const v = { ...f.valid }; delete v[vKey(id)]; return { ...f, valid: v }; });
+  /* Editing a scenario input withdraws the signature of its perimeter, even if the figures come back to their old values */
+  const setScenInputs = (scenId, fn, perims) => setFlow((f) => {
+    const valid = { ...f.valid };
+    perims.forEach((p) => { delete valid[`${scenId}|${p}`]; });
+    return { ...f, valid, scenarios: (f.scenarios || []).map((x) => (x.id === scenId ? { ...x, inputs: fn(x.inputs) } : x)) };
+  });
+  const setIn = (k, id, v) => editable && setScenInputs(scen.id, (i) => ({ ...i, [k]: { ...(i[k] || {}), [id]: v } }), [FIN_INPUT_PERIM[k]]);
+  const setAlloc = (id, kpcs) => editable && setScenInputs(scen.id, (i) => ({ ...i, kfiAlloc: { ...(i.kfiAlloc || {}), [i.kfiScenario]: { ...((i.kfiAlloc || {})[i.kfiScenario] || {}), [id]: Math.max(0, kpcs) * 1000 } } }), ["kfi"]);
+  const resetPerim = (p) => editable && setScenInputs(scen.id, (i) => ({ ...i, ...Object.fromEntries(FIN_PERIM_INPUTS[p].map((k) => [k, finClone(copy.inputs[k] ?? finDefaultInputs()[k])])) }), [p]);
+  const allocCell = (id, v, color) => (
+    <td style={finNum}>
+      <input type="number" step={5} aria-label={`Allocated ${id}`} value={Math.round(v / 1000)} disabled={!editable} onChange={(e) => setAlloc(id, num(e))} style={{ ...finInp, width: 70, color: color || T.ink, borderColor: kfi.edits[id] != null ? T.human : undefined }} /> <span style={{ fontSize: 10, color: T.faint }}>kpcs</span>
+      {kfi.edits[id] != null && <div style={{ fontSize: 9.5, color: T.faint, fontFamily: MONO }}>prop. {kp(kfi.proposed[id])}</div>}
+    </td>
+  );
+
+  /* Push of a copy by the Group controller: a new identified, dated version with its inputs / outputs snapshot.
+     It validates nothing; the older signatures and reserve decisions are withdrawn, the thread history stays visible. */
+  const pushCopy = (inputs, from) => {
+    if (!frameValid) return;
+    setFlow((f) => {
+      const v = (f.copies || []).length + 1, n = (f.scenSeq || 0) + 1, at = finNow();
+      const c = { v, at, by: FIN_GROUP_CDG, from, fk, frameAt: frame.at, frameSnap: { ...frame.snap }, inputs: finClone(inputs), outputs: finSnapOut(finCompute(frame.snap, inputs)) };
+      return { ...f, copies: [...(f.copies || []), c], scenSeq: n, scenarios: [...(f.scenarios || []), { id: `S${n}`, name: `Working copy V${v}`, copyV: v, from: `copy V${v}`, src: finClone(inputs), inputs: finClone(inputs), at }], activeScen: `S${n}`, compareScen: null, valid: {}, decisions: {} };
+    });
   };
-  const breakdownDone = ["country", "collection", "kfi", "supply"].every(isValid);
-  const splitDone = ["seasonColl", "seasonSupply"].every(isValid);
+  const createScen = (name, inputs, from, activate = true) => setFlow((f) => {
+    const n = (f.scenSeq || 0) + 1;
+    return { ...f, scenSeq: n, scenarios: [...(f.scenarios || []), { id: `S${n}`, name, copyV: copy.v, from, src: finClone(inputs), inputs: finClone(inputs), at: finNow() }], activeScen: activate ? `S${n}` : f.activeScen };
+  });
+  const demoScenarios = () => {
+    const pic = { ...finClone(copy.inputs), kfiScenario: "pic" };
+    const kids = finClone(copy.inputs);
+    ["of-girls", "of-boys", "of-capsules"].forEach((id) => { const o = base.coll.offers.find((x) => x.id === id); kids.offerDem[id] = o.demarque + 1; kids.offerTme[id] = o.tme; kids.offerTmv[id] = tmvModel(o.tme, o.demarque + 1); });
+    createScen("Demo — RELEX demand peak on the Baby panel", pic, `copy V${copy.v} · KFI scenario Demand peak (demo assumption)`, false);
+    createScen("Demo — Kids markdown +1 pt", kids, `copy V${copy.v} · +1 pt markdown on the three Kids offers, TMV recalculated (demo assumption, not a Kiabi rule)`, false);
+  };
+  /* Back to the scenario source: its figures and controls come back, its signatures and reserve decisions are withdrawn */
+  const resetScen = () => editable && setFlow((f) => {
+    const valid = { ...f.valid }, decs = { ...(f.decisions || {}) };
+    Object.keys(valid).forEach((k) => { if (k.startsWith(`${scen.id}|`)) delete valid[k]; });
+    Object.keys(decs).forEach((k) => { if (k.startsWith(`${scen.id}|`)) delete decs[k]; });
+    return { ...f, valid, decisions: decs, scenarios: f.scenarios.map((x) => (x.id === scen.id ? { ...x, inputs: finClone(x.src) } : x)) };
+  });
 
-  /* Step 4 — historical department submissions (BUDGET_COPIES), a control aid only */
-  const analyses = flow.received ? BUDGET_COPIES.map((c) => ({ c, obj: depts.find((d) => d.n === c.n) || c, a: analyseCopie(c, depts.find((d) => d.n === c.n) || c) })) : [];
-  const sumCopies = BUDGET_COPIES.reduce((s2, c) => s2 + c.budget, 0);
-  const gapGlobal = sumCopies - glob.budget;
-  const gapPct = (gapGlobal / glob.budget) * 100;
-  const aReprendre = analyses.filter((x) => x.a.verdict !== "Compliant").sort((x) => (x.a.verdict === "Inconsistency" ? -1 : 1));
-  const arbValid = flow.arbitration && flow.arbitration.key === keys.arbitration && splitDone;
+  /* Negotiation thread — every accepted proposal is a real change of the working scenario (never of the frame or of the baseline) */
+  const scenById = (id) => scenarios.find((x) => x.id === id);
+  const addEntry = (e, onInp = inp) => {
+    if (!editable) return;
+    const v = finChangeView(e.change, onInp, cref);
+    setFlow((f) => { const n = (f.threadSeq || 0) + 1, at = finNow(); return { ...f, threadSeq: n, thread: [...(f.thread || []), { id: `P${n}`, copyV: copy.v, scenId: scen.id, at, status: "proposed", role: FIN_PERIM_OF[e.perim].owner, author: e.author || FIN_PERIM_OF[e.perim].owner, perim: e.perim, change: e.change, reason: e.reason, demo: !!e.demo, kpi: v.kpi, before: v.before, after: v.after, log: [{ at, by: e.author || FIN_PERIM_OF[e.perim].owner, action: "proposed" }] }] }; });
+  };
+  const updEntry = (id, fn) => setFlow((f) => ({ ...f, thread: (f.thread || []).map((t) => (t.id === id ? fn(t) : t)) }));
+  const logOf = (t, by, action, note) => [...t.log, { at: finNow(), by, action, note: note || "" }];
+  const accept = (t, note) => {
+    if (!editable || t.scenId !== scen.id || t.copyV !== copy.v || !(t.reason || "").trim() || finChangeIssues(t.change).length) return;
+    setScenInputs(scen.id, (i) => finApplyChange(i, t.change), [t.perim]);
+    updEntry(t.id, (x) => ({ ...x, status: "accepted", decision: note, log: logOf(x, FIN_GROUP_CDG, "accepted & applied to the working scenario", note) }));
+  };
+  const reject = (t, note) => note.trim() && updEntry(t.id, (x) => ({ ...x, status: "rejected", decision: note.trim(), log: logOf(x, FIN_GROUP_CDG, "rejected — figures unchanged", note.trim()) }));
+  const askRevision = (t, note) => note.trim() && updEntry(t.id, (x) => ({ ...x, status: "to revise", log: logOf(x, FIN_GROUP_CDG, "revision requested", note.trim()) }));
+  const revise = (t, change, reason) => { const v = finChangeView(change, inp, cref); updEntry(t.id, (x) => ({ ...x, status: "proposed", change, reason, kpi: v.kpi, before: v.before, after: v.after, log: logOf(x, x.role, "proposal revised and explained", reason) })); };
+  const seedDemo = () => {
+    const k0 = kfi.r.partners.reduce((m, p) => ({ ...m, [p.id]: Math.round(p.alloc / 1000) }), {});
+    [
+      { perim: "country", author: "Country controller — Poland (demo role)", demo: true, change: { type: "countryTransfer", to: "PL", pts: 0.6, from: [{ code: "FR", pts: 0.4 }, { code: "IT", pts: 0.2 }] }, reason: "Demand signal (demo): the Polish demo stores trend above last year (Warszawa Arkadia +12 %, Kraków Bonarka +5 %) while Italy is below trend (Roma Est −10 %, Milano Bicocca −5 %). Transfer 0,6 pt of the Group frame to Poland, compensated by France (0,4 pt) and Italy (0,2 pt): the country total is unchanged." },
+      { perim: "collection", author: "Collection controller — Kids (demo role)", demo: true, change: { type: "offerRates", offer: "of-capsules", dem: 32, tme: 57.5 }, reason: "Kids capsules & collabs: the declared TMV of 49,5 % does not reconcile with TMB 55 % and 33 % markdown (tmvModel gives 46,1 %). Demo assumption: renegotiated licence royalties lift TMB (= TME) to 57,5 % and one markdown wave less brings markdown to 32 %; TMV recalculated 49,4 %." },
+      { perim: "kfi", author: "KFI representative (demo role)", demo: true, change: { type: "kfiAlloc", scenario: inp.kfiScenario, alloc: { taipei: k0.taipei - 20, shenzhen: k0.shenzhen + 20 } }, reason: "Cost signal (demo): Taipei Knitworks is the most expensive partner (6,20 €/pc) while Shenzhen Garments (4,35 €/pc) has capacity headroom. Move 20 kpcs from Taipei to Shenzhen: the panel cost falls; the spread over the families leaves a small coverage reserve to arbitrate." },
+    ].forEach((e) => addEntry(e));
+  };
+  const seeded = !!copy && thread.some((t) => t.demo && t.copyV === copy.v && scen && t.scenId === scen.id);
+  /* Proposed values per perimeter = the working scenario with the open proposals of that perimeter applied */
+  const openOf = (p) => thread.filter((t) => scen && copy && t.copyV === copy.v && t.scenId === scen.id && t.perim === p && t.status === "proposed" && !finChangeIssues(t.change).length);
+  const propRes = (p) => { const os = openOf(p); return os.length ? finCompute(cref, os.reduce((i, t) => finApplyChange(i, t.change), inp)) : null; };
 
-  const STEPS = [["Global budget", "Group frame — human"], ["Breakdown", "four agents"], ["Season split", "S1 2027"], ["Submissions & arbitration", "human arbitration"]];
+  /* Arbitration: copy version, retained scenario, final values, decisions on proposals and on the non-blocking reserves */
+  const scenThread = thread.filter((t) => copy && scen && t.copyV === copy.v && t.scenId === scen.id);
+  const openItems = scenThread.filter((t) => t.status === "proposed" || t.status === "to revise");
+  const decided = scenThread.filter((t) => t.status === "accepted" || t.status === "rejected");
+  const decisions = flow.decisions || {};
+  const reserves = res.reserves.map((r) => { const d = decisions[`${scen ? scen.id : "-"}|${r.id}`]; return { ...r, dec: d && d.key === keys[r.p] ? d : null }; });
+  const recordReserve = (r, decision, reason) => editable && reason && setFlow((f) => ({ ...f, decisions: { ...(f.decisions || {}), [`${scen.id}|${r.id}`]: { key: keys[r.p], decision, reason, at: finNow(), by: FIN_GROUP_CDG } } }));
+  keys.arbitration = finKey([keys.country, keys.supply, reserves.map((r) => [r.id, r.dec && r.dec.decision, r.dec && r.dec.reason]), decided.map((t) => [t.id, t.status, t.reason])]);
+  const lastAppr = approvals[approvals.length - 1] || null;
+  const approvedNow = !!lastAppr && lastAppr.key === keys.arbitration && copyCurrent;
+  const signed = FIN_PERIMS.every((p) => isValid(p.id));
+  const reqs = [
+    [frameValid, "Group frame validated (screen 1)"],
+    [!!copy, "Initial copy pushed by the Group controller"],
+    [copyCurrent, copy ? `Copy V${copy.v} current (not obsolete after a frame change)` : "Copy current"],
+    [res.blocking.length === 0, res.blocking.length ? `No blocking control failing — ${res.blocking.length} failing` : "No blocking control failing"],
+    [signed, `Three perimeter signatures (${FIN_PERIMS.filter((p) => isValid(p.id)).length} / 3)`],
+    [openItems.length === 0, openItems.length ? `No open proposal — ${openItems.length} still proposed or to revise` : "No open proposal"],
+    [reserves.every((r) => r.dec), `Every reserve decided with a justification (${reserves.filter((r) => r.dec).length} / ${reserves.length})`],
+  ];
+  const canApprove = reqs.every(([ok]) => ok) && !approvedNow;
+  const approve = () => {
+    if (!canApprove) return;
+    setFlow((f) => {
+      const prev = (f.approvals || [])[(f.approvals || []).length - 1];
+      if (prev && prev.key === keys.arbitration) return f; /* a double click never signs twice */
+      const n = (f.approvals || []).length + 1;
+      return { ...f, approvals: [...(f.approvals || []), {
+        id: `A${n}`, key: keys.arbitration, at: finNow(), by: FIN_GROUP_CDG, copyV: copy.v, copyAt: copy.at, scenId: scen.id, scenName: scen.name, fk, frameAt: frame.at, frameSnap: { ...frame.snap },
+        inputs: finClone(inp), outputs: finSnapOut(res),
+        signatures: FIN_PERIMS.map((p) => ({ perim: p.id, owner: p.owner, at: f.valid[vKey(p.id)].at })),
+        reserves: reserves.map((r) => ({ perim: r.p, label: r.label, decision: r.dec.decision, reason: r.dec.reason })),
+        decisions: decided.map((t) => ({ id: t.id, perim: t.perim, kpi: t.kpi, status: t.status, reason: t.reason, note: t.decision || "" })),
+      }] };
+    });
+    if (openMonitoring) openMonitoring();
+  };
+
+  const STEPS = [["Global budget", "Group frame — human"], ["Controller sandbox", "copy · exchanges · scenarios · arbitration"]];
   const btn = (bg, on = true) => ({ display: "inline-flex", alignItems: "center", gap: 7, cursor: on ? "pointer" : "not-allowed", background: on ? bg : T.line, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontWeight: 800, fontFamily: SANS });
-  const frameChip = frameValid ? <Chip color={T.ok}>Group frame validated · {frame.at}</Chip> : <Chip color={T.warn}>{frame ? "Group frame changed — validate it again in step 1" : "Group frame not validated"}</Chip>;
+  const frameChip = frameValid ? <Chip color={T.ok}>Group frame validated · {frame.at}</Chip> : <Chip color={T.warn}>{frame ? "Group frame changed — validate it again on screen 1" : "Group frame not validated"}</Chip>;
+  const copyChip = !copy ? <Chip color={T.faint}>No copy pushed</Chip> : copyCurrent ? <Chip color={T.accent}>Copy V{copy.v} · {copy.at}</Chip> : <Chip color={T.bad}>Copy V{copy.v} obsolete — frame changed</Chip>;
   const hEdits = flow.horizonEdits || {};
   const hRows = finHorizonRows(glob, hEdits);
   /* Manual projection edits: stored per year / indicator with the proposal they replaced (base) — outside setF, so no signature moves */
@@ -4518,16 +4863,42 @@ function BudgetModule({ fw }) {
     return { ...f, horizonEdits: { ...(f.horizonEdits || {}), [yr]: y } };
   });
   const HZ_SRC = { proposal: { c: T.faint, l: "calculated proposal" }, manual: { c: T.human, l: "manually edited" }, stale: { c: T.warn, l: "manual — base changed" } };
+  const M = (v) => `${fr1(v)} M€`, P = (v) => `${fr1(v)} %`, E = (v) => `${fr2(v)} €/pc`;
+  const cmpRows = [
+    ["Group frame revenue", "Group", (r) => r.k.frame, M, "M€"],
+    ["Total countries", "Countries (reading of the frame)", (r) => r.k.countryTotal, M, "M€"],
+    ["Country markdown (revenue-weighted)", "Countries", (r) => r.k.countryDem, P, "pt"],
+    ["Four categories revenue", "Collections", (r) => r.k.catTotal, M, "M€"],
+    ["Other Group revenue (bridge)", "Collections → Group", (r) => r.k.rest, M, "M€"],
+    ["Group bridge", "Collections → Group", (r) => r.k.bridge, M, "M€"],
+    ["PVI (revenue-weighted)", "Collections", (r) => r.k.pvi, E, "€"],
+    ["Markdown (revenue-weighted)", "Collections", (r) => r.k.dem, P, "pt"],
+    ["TMB (= TME) (revenue-weighted)", "Collections", (r) => r.k.tmb, P, "pt"],
+    ["TMV recalculated (tmvModel, weighted)", "Collections", (r) => r.k.tmv, P, "pt"],
+    ["TMV declared — control", "Collections", (r) => r.k.tmvDecl, P, "pt"],
+    ["Purchases", "Supply/Collection — four categories", (r) => r.k.purchase, M, "M€"],
+    ["QTES", "Supply/Collection — four categories", (r) => r.k.qtes, (v) => `${fr1(v)} M pcs`, "Mpcs"],
+    ["Projected cost / PA", "KFI — Baby knitwear panel only", (r) => r.k.kfiCost, E, "€"],
+    ["Panel purchase cost", "KFI — panel only, not extrapolated", (r) => r.k.panelCost, (v) => `${fr2(v)} M€`, "M€2"],
+    ["Uncovered RELEX demand", "KFI — panel", (r) => r.k.kfiUncovered, kp, "pcs"],
+    ["Off-panel", "KFI — panel", (r) => r.k.kfiHors, kp, "pcs"],
+    ["KFI verdict", "KFI — panel", (r) => `${r.k.kfiVerdict} (${r.k.kfiScen})`, (v) => v, "text"],
+    ["Blocking controls failing", "Reconciliation", (r) => r.blocking.length, (v) => String(v), "n"],
+    ["Reserves to arbitrate", "Reconciliation", (r) => r.reserves.length, (v) => String(v), "n"],
+  ];
+  const dCell = (unit, a, b) => (unit === "text" ? (a === b ? "—" : "changed") : unit === "n" ? (a === b ? "—" : sg(b - a, 0)) : Math.abs(b - a) < 0.005 ? "—" : finGap(unit, b - a));
+  const statusChip = (s2) => <Chip color={FIN_STATE[s2.state].c}>{s2.state === "validated" ? `Signed · ${s2.at}` : FIN_STATE[s2.state].l}</Chip>;
+  const counts = (p) => { const ts = scenThread.filter((t) => t.perim === p); return `${ts.filter((t) => t.status === "proposed" || t.status === "to revise").length} open · ${ts.filter((t) => t.status === "accepted").length} accepted · ${ts.filter((t) => t.status === "rejected").length} rejected`; };
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <FinDemo /><span style={{ fontSize: 11, color: T.faint }}>Principle: the agent produces, checks and proposes · the CDG validates and signs · the Group frame and the final arbitration stay human. Nothing is written to BAK, no email is sent.</span>
+        <FinDemo /><span style={{ fontSize: 11, color: T.faint }}>Principle: the agent proposes and computes · the controllers explain and arbitrate · the Group frame and the final approval stay human. Nothing is written to BAK or Excel, no message is sent.</span>
       </div>
-      {/* Stepper */}
+      {/* Stepper — two screens */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 8, marginBottom: 18 }}>
         {STEPS.map(([t, sub], i) => {
-          const n = i + 1, on = step === n, done = [frameValid, breakdownDone, splitDone, arbValid][i];
+          const n = i + 1, on = step === n, done = [frameValid, approvedNow][i];
           const c = on ? T.accent : done ? T.ok : T.faint;
           return (
             <button key={t} onClick={() => setStep(n)} style={{ cursor: "pointer", textAlign: "left", background: on ? `${T.accent}10` : T.panel, border: `1px solid ${on ? T.accent : T.line}`, borderRadius: 11, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, fontFamily: SANS }}>
@@ -4538,7 +4909,7 @@ function BudgetModule({ fw }) {
         })}
       </div>
 
-      {/* ---- Step 1: Group frame (human) ---- */}
+      {/* ---- Screen 1: Group frame (human) ---- */}
       {step === 1 && (
         <div style={cardB}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
@@ -4604,266 +4975,282 @@ function BudgetModule({ fw }) {
             </div>
             <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6, lineHeight: 1.5 }}>{FIN_DEMO}. FY 2027-28 and FY 2028-29 are editable projections: the calculated proposal is only a starting point, each manual value is kept per year and indicator until reverted. Rule when the base changes: a manual value is never overwritten — it is flagged "manual — base changed" and can be rebased (the same deviation applied to the new proposal) or reverted. Each year is proposed from the values retained for the year before; a manual TMV is never recomputed, the chain TMB → TMV is shown as a control. These projections are not a validated budget: they never enter an agent input, a validation key or a CDG signature.</div>
           </CollapsibleSection>
-          <div style={{ marginTop: 14 }}><button onClick={validateGlobal} style={btn(T.accent)}>{frameValid ? "Group frame validated — go to the breakdown" : "Validate the Group frame (human) and break it down"} <ArrowRight size={14} /></button></div>
+          <div style={{ marginTop: 14 }}><button onClick={validateGlobal} style={btn(T.accent)}>{frameValid ? "Group frame validated — go to the controller sandbox" : "Validate the Group frame (human) and open the controller sandbox"} <ArrowRight size={14} /></button></div>
         </div>
       )}
 
-      {/* ---- Step 2: four agents ---- */}
+      {/* ---- Screen 2: controller sandbox ---- */}
       {step === 2 && (
         <div style={cardB}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-            <Layers size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Breakdown — four agents, four CDG validations</span>
-            {frameChip}
+            <Layers size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Controller sandbox — initial copy, exchanges, scenarios and arbitration</span>
+            {frameChip}{copyChip}{approvedNow && <Chip color={T.ok}>Approved {lastAppr.id} · {lastAppr.at}</Chip>}
           </div>
-          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 4, lineHeight: 1.5 }}>The Country view and the Collection view each reconcile with the validated frame ({u(ref.budget)} M€, ±{FIN_TOL} %); the four views are never added together. KFI validates industrial feasibility and sourcing, not a revenue. Changing an input invalidates its validation and every downstream proposal.</div>
+          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10, lineHeight: 1.5 }}>The Group controller pushes a copy of the validated frame ({u(cref.budget)} M€). Country controllers, the Collection controller and the KFI representative discuss it with justified proposals; the agent recalculates every impact with the existing engines. Countries and collections are two readings of the same frame — never two revenues to add. KFI reads industrial feasibility and sourcing on the Baby knitwear panel, it is not a fourth revenue budget. CDG = the controller in charge, not an extra financial axis.</div>
 
-          <FinAgent title="Country agent" icon={Globe2} owner="CDG Pays" kpis="Revenue, markdown rate" gran="Country / store / year" source="Simulated country and store weights · target source: BAK country budget" status={s.country} checks={country.checks}
-            calc={`country revenue = validated frame × country share; country markdown proposed = frame markdown + country delta, editable by the CDG Pays (the revenue-weighted markdown must stay within ±0,5 pt of the frame); each country is split into three named demo stores (share of the country) and "other stores", so stores always add up to their country. N+1 = simulation (+${fr1(FIN_HORIZONS[1].growth)} %).`}
-            validateLabel="Validate as CDG Pays" onValidate={() => validate("country", "CDG Pays")} onCancel={() => cancel("country")} onReset={() => setF({ countryShares: Object.fromEntries(FIN_COUNTRIES.map((c) => [c.code, c.share])), countryDem: {} })}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Country", "Share (%)", "Revenue FY 26-27", "Markdown (%)", "Stores", "Revenue N+1 (sim.)", ""].map((h, j) => <th key={h + j} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {country.rows.map((r) => (
-                    <tr key={r.code}>
-                      <td style={{ ...finTd, fontWeight: 800 }}>{r.name}</td>
-                      <td style={finNum}><input type="number" step={0.5} value={r.share} onChange={(e) => setIn("countryShares", r.code, num(e))} style={finInp} /></td>
-                      <td style={finNum}>{fr1(r.ca)} M€</td>
-                      <td style={finNum}><input type="number" step={0.5} aria-label={`Markdown ${r.name}`} value={r.dem} onChange={(e) => setIn("countryDem", r.code, num(e))} style={{ ...finInp, width: 62, borderColor: r.demEdited ? T.human : undefined }} />{r.demEdited && <div style={{ fontSize: 9.5, color: T.faint, fontFamily: MONO }}>prop. {fr1(r.demProp)} %</div>}</td>
-                      <td style={finNum}>{r.stores.length + r.other.n}</td><td style={{ ...finNum, color: T.faint }}>{fr1(r.next)} M€</td>
-                      <td style={{ ...finTd, textAlign: "right" }}><button onClick={() => setCountryOpen(r.code)} style={{ cursor: "pointer", background: "transparent", border: "none", color: T.blue, fontSize: 11, fontWeight: 700, fontFamily: SANS }}>{countryOpen === r.code ? "stores ▾" : "stores →"}</button></td>
-                    </tr>
-                  ))}
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Total countries</td><td style={{ ...finNum, color: Math.abs(country.shareSum - 100) <= FIN_TOL ? T.ok : T.bad }}>{fr1(country.shareSum)} %</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(country.total)} M€</td><td style={finNum}>{fr1(country.wDem)} %</td><td style={finNum}>{FIN_COUNTRIES.reduce((a, c) => a + c.stores, 0)}</td><td style={finNum}>{fr1(country.rows.reduce((a, r) => a + r.next, 0))} M€</td><td /></tr>
-                </tbody>
-              </table>
+          {/* Copy versions */}
+          <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 13px", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={microLbl}>Copy pushed by the {FIN_GROUP_CDG}</span>
+              {!copy ? (
+                <button onClick={() => pushCopy(finDefaultInputs(), "agent proposal on the validated frame")} disabled={!frameValid} style={btn(T.accent, frameValid)}><Send size={14} /> Push initial copy</button>
+              ) : (
+                <>
+                  <button onClick={() => pushCopy(finDefaultInputs(), "agent proposal on the validated frame")} disabled={!frameValid} style={finSmallBtn(T.accent, frameValid)}><Send size={13} /> Push a new copy from the frame</button>
+                  {scen && <button onClick={() => pushCopy(scen.inputs, `scenario “${scen.name}” of copy V${copy.v}`)} disabled={!frameValid} style={finSmallBtn(T.human, frameValid)}><Send size={13} /> Push a new copy from “{scen.name}”</button>}
+                </>
+              )}
             </div>
-            {(() => { const c = country.rows.find((r) => r.code === countryOpen); return c && (
-              <div style={{ marginTop: 10, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 9, padding: "9px 11px" }}>
-                <span style={microLbl}>{c.name} — demo stores (named stores are simulated; weights and trends are assumptions)</span>
-                {c.stores.map((x) => <div key={x.name} style={{ display: "flex", gap: 8, fontSize: 11.5, padding: "3px 0", borderBottom: `1px solid ${T.lineSoft}` }}><span style={{ flex: 1, color: T.ink, fontWeight: 700 }}>{x.name}</span><span style={{ fontFamily: MONO, color: T.sub }}>{fr2(x.ca)} M€ · {fr1(x.w)} % of the country</span><Chip color={x.out ? T.warn : T.ok}>trend {sp((x.trend - 1) * 100, 0)}{x.out ? " · out of trend" : ""}</Chip></div>)}
-                <div style={{ display: "flex", gap: 8, fontSize: 11.5, padding: "3px 0" }}><span style={{ flex: 1, color: T.sub }}>Other {c.other.n} stores</span><span style={{ fontFamily: MONO, color: T.sub }}>{fr1(c.other.ca)} M€</span></div>
-              </div>); })()}
-            {country.outliers.length > 0 && <div style={{ fontSize: 11.5, color: T.warn, marginTop: 8 }}>Out-of-trend demo stores (±8 % vs last year): {country.outliers.map((x) => `${x.name} (${x.country}, ${sp((x.trend - 1) * 100, 0)})`).join(" · ")}</div>}
-          </FinAgent>
-
-          <FinAgent title="Collection agent" icon={LayoutGrid} owner="CDG Collections" kpis="Revenue, PVI, markdown, TMB (= TME), TMV, contribution" gran="Category (Men / Women / Kids / Baby) / offer / year · Group consolidated" source="Offer referential with explicit offer → category mapping (demo: six historical offers + five Men / Women offers) · target source: BAK collection budget" status={s.collection} checks={coll.checks}
-            calc={`${FIN_CAT_PERIM} target = validated frame × the share of the Group revenue carried by the four categories in the demo referential (${pc(coll.ocShare * 100)}) = ${fr1(coll.ocTarget)} M€; each of the ${coll.offers.length} offers is scaled by ${fr2(coll.factor)} and summed into its category; markdown and TMB are proposed from the referential and editable per offer; category rates are revenue-weighted, contribution = category revenue ÷ total of the four; the chain is checked with tmvModel / tmeModel and the totals with computeOfferBreakdown. The rest of the Group (${fr1(coll.rest)} M€) is a bridge line, never split by category.`}
-            validateLabel="Validate as CDG Collections" onValidate={() => validate("collection", "CDG Collections")} onCancel={() => cancel("collection")} onReset={() => setF({ offerBudgets: {}, offerTme: {}, offerDem: {} })}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Category → offer", "Contribution", "Proposed", "Revenue (M€)", "PVI", "Markdown (%)", "TMB (= TME) %", "TMV", "Expected TMV", "Chain"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {coll.colls.map((c) => (
-                    <React.Fragment key={c.name}>
-                      <tr style={{ background: T.panel2 }}>
-                        <td style={{ ...finTd, fontWeight: 800 }}><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 99, background: c.color, marginRight: 6 }} />Category — {c.name} <span style={{ fontWeight: 400, color: T.faint, fontSize: 10.5 }}>· {c.n} offers</span></td>
-                        <td style={{ ...finNum, fontWeight: 800 }}>{pc(c.contrib)}</td><td /><td style={{ ...finNum, fontWeight: 800, color: c.ca > 0 ? T.ink : T.bad }}>{fr1(c.ca)} M€</td><td style={finNum}>{fr2(c.pvm)} €</td><td style={finNum}>{fr1(c.dem)} %</td><td style={finNum}>{fr1(c.tme)} %</td><td style={finNum}>{fr1(c.tmv)} %</td><td style={finNum}>{fr1(c.tmvExp)} %</td>
-                        <td style={{ ...finTd, textAlign: "right" }}><Chip color={c.chainOk ? T.ok : T.bad}>{c.chainOk ? "OK" : "To fix"}</Chip></td>
-                      </tr>
-                      {coll.offers.filter((o) => o.category === c.name).map((o) => (
-                        <tr key={o.id}>
-                          <td style={{ ...finTd, paddingLeft: 24 }}>{o.name} <span style={{ fontFamily: MONO, fontSize: 10, color: T.faint }}>{o.id}</span></td>
-                          <td style={{ ...finNum, color: T.faint }}>{pc(coll.offersTotal ? (o.budget / coll.offersTotal) * 100 : 0)}</td>
-                          <td style={{ ...finNum, color: T.faint }}>{fr1(o.proposed)}</td>
-                          <td style={finNum}><input type="number" step={1} value={o.budget} onChange={(e) => setIn("offerBudgets", o.id, num(e))} style={finInp} /></td>
-                          <td style={finNum}>{fr2(o.pvm)} €</td>
-                          <td style={finNum}><input type="number" step={0.5} aria-label={`Markdown ${o.name}`} value={o.demarque} onChange={(e) => setIn("offerDem", o.id, num(e))} style={{ ...finInp, width: 62, borderColor: o.demEdited ? T.human : undefined }} />{o.demEdited && <div style={{ fontSize: 9.5, color: T.faint, fontFamily: MONO }}>prop. {fr1(o.demProp)} %</div>}</td>
-                          <td style={finNum}><input type="number" step={0.5} value={o.tme} onChange={(e) => setIn("offerTme", o.id, num(e))} style={{ ...finInp, width: 62 }} /></td>
-                          <td style={finNum}>{fr1(o.tmv)} %</td><td style={finNum}>{fr1(o.tmvExp)} %</td>
-                          <td style={{ ...finTd, textAlign: "right" }}><Chip color={o.chainOk ? T.ok : T.bad}>{o.chainOk ? "OK" : `${sg(o.tmv - o.tmvExp)} pt`}</Chip></td>
-                        </tr>
-                      ))}
-                    </React.Fragment>
-                  ))}
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Total four categories — {FIN_CAT_PERIM.split(" — ")[0]}</td><td style={{ ...finNum, fontWeight: 800 }}>{pc(coll.colls.reduce((a2, c) => a2 + c.contrib, 0))}</td><td style={{ ...finNum, color: T.faint }}>{fr1(coll.ocTarget)}</td><td style={{ ...finNum, fontWeight: 800, color: Math.abs(coll.ocGapPct) <= FIN_TOL ? T.ok : T.bad }}>{fr1(coll.offersTotal)} M€</td><td style={finNum}>{fr2(coll.bd.weighted.pvm)} €</td><td style={finNum}>{fr1(coll.bd.weighted.demarque)} %</td><td style={finNum}>{fr1(coll.bd.weighted.tme)} %</td><td style={finNum}>{fr1(coll.bd.weighted.tmv)} %</td><td colSpan={2} /></tr>
-                  <tr><td style={{ ...finTd, color: T.sub }} colSpan={3}>Other Group revenue not carried by an offer (franchise fees, services, non-apparel) — bridge only</td><td style={finNum}>{fr1(coll.rest)} M€</td><td colSpan={6} /></tr>
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }} colSpan={3}>Group consolidated (bridge)</td><td style={{ ...finNum, fontWeight: 800, color: Math.abs(coll.bridgeGapPct) <= FIN_TOL ? T.ok : T.bad }}>{fr1(coll.bridge)} M€</td><td colSpan={6} style={{ ...finTd, color: T.faint }}>vs validated frame {u(ref.budget)} M€</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6 }}>{FIN_DEMO}. Offer → category mapping is explicit (FIN_OFFER_CATEGORY); the Men and Women offers are fictitious demo offers added to the Financial Framework, the historical Baby and Kids offers keep their category. The four categories are a revenue axis; the department referential (Budget by department) is a separate functional axis and is not added to it.</div>
-          </FinAgent>
-
-          <FinAgent title="KFI agent" icon={Factory} owner="KFI Director" kpis="Allocation, capacity, commitments, cost / PA" gran="Collection / supplier / demand scenario" source="KFI partner business plans and RELEX scenarios (demo) · same rules as the KFI tab" status={s.kfi} checks={kfi.checks}
-            calc="allocates the selected RELEX demand scenario on the Baby knitwear partner panel with computeKfiReconciliation (the KFI tab engine); the allocated volume of each partner and of the off-panel route is proposed from the default allocation and editable by the KFI Director (spread over the families in proportion to the proposal); the agent flags under-commitment, over-capacity, off-panel volume and the cost / PA gap. Its validation covers industrial feasibility and sourcing only — no revenue is produced, nothing is added to the budget."
-            validateLabel={kfi.r.globalVerdict === "Violation" ? "Validate feasibility with reservations (KFI Director)" : "Validate feasibility (KFI Director)"} onValidate={() => validate("kfi", "KFI Director")} onCancel={() => cancel("kfi")} onReset={() => setF((f) => { const a = { ...(f.kfiAlloc || {}) }; delete a[f.kfiScenario]; return { kfiAlloc: a }; })}>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>DEMAND SCENARIO</span>
-              {KFI_FORECAST_SCENARIOS.map((x) => <button key={x.id} onClick={() => setF({ kfiScenario: x.id })} style={{ cursor: "pointer", background: flow.kfiScenario === x.id ? T.accent : T.panel, color: flow.kfiScenario === x.id ? "#ffffff" : T.sub, border: `1px solid ${flow.kfiScenario === x.id ? T.accent : T.line}`, borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>{x.name} · {mp(x.total)}</button>)}
-              <span style={{ marginLeft: "auto" }}><KfiVerdict v={kfi.r.globalVerdict} /></span>
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Supplier", "Allocated (editable)", "Plan", "Minimum", "Capacity", "Cost / PA", "Verdict"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {kfi.r.partners.map((p) => (
-                    <tr key={p.id}><td style={{ ...finTd, fontWeight: 800 }}>{p.supplier}</td>{allocCell(p.id, p.alloc, p.overload ? T.bad : null)}<td style={finNum}>{kp(p.plannedVolume)}</td><td style={{ ...finNum, color: p.shortfall ? T.warn : T.ink }}>{kp(p.minCommitment)}</td><td style={{ ...finNum, color: p.overload ? T.bad : T.ink }}>{kp(p.maxCapacity)}</td><td style={finNum}>{fr2(p.targetCost)} €</td><td style={{ ...finTd, textAlign: "right" }}><KfiVerdict v={p.verdict} /></td></tr>
-                  ))}
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Off-panel</td>{allocCell(KFI_HORS, kfi.r.horsPanel, kfi.r.horsPanel ? T.bad : null)}<td colSpan={3} style={{ ...finTd, color: T.faint }}>allocated {kp(kfi.r.allocated)} vs demand {kp(kfi.r.totalForecast)} · uncovered {kp(kfi.r.uncovered)}{kfi.r.overAllocated ? ` · above demand ${kp(kfi.r.overAllocated)}` : ""}</td><td style={finNum}>{fr2(kfi.r.projCost)} €</td><td style={{ ...finTd, textAlign: "right" }}><KfiVerdict v={kfi.r.horsVerdict} /></td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6 }}>Units: pieces of the Baby knitwear partner panel (S1 2027 families) — a sample perimeter, not the collection budget. The detailed arbitration lives in the KFI tab.</div>
-          </FinAgent>
-
-          <FinAgent title="Supply/Collection agent" icon={Truck} owner="CDG Supply/Collections" kpis="PVI, PA, TMB (= TME), volumes" gran="Category (Men / Women / Kids / Baby) / year" source="Collection agent + KFI agent outputs (demo) · target source: BAK purchase plan" status={s.supply} checks={supply.checks}
-            calc="for each validated category: PA holding the target = PVI × (1 − TMB); PA after the assumed purchase-price drift = PA × (1 + drift); effective TMB = 1 − PA ÷ PVI; net price = PVI × (1 − markdown ÷ 2); QTES = revenue ÷ net price; purchases = QTES × PA. It consumes the KFI verdict and adds no revenue of its own."
-            validateLabel="Validate as CDG Supply/Collections" onValidate={() => validate("supply", "CDG Supply/Collections")} onCancel={() => cancel("supply")} onReset={() => setF({ supply: {} })}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Category", "Revenue", "PVI (€/pc)", "TMB target", "PA drift (%)", "PA (€/pc)", "Effective TMB", "QTES (M pcs)", "Purchases"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {supply.rows.map((r) => (
-                    <tr key={r.name}><td style={{ ...finTd, fontWeight: 800 }}>{r.short}</td><td style={finNum}>{fr1(r.ca)} M€</td><td style={finNum}>{fr2(r.pvm)}</td><td style={finNum}>{fr1(r.tme)} %</td>
-                      <td style={finNum}><input type="number" step={0.5} value={r.infl} onChange={(e) => setIn("supply", r.name, num(e))} style={{ ...finInp, width: 62 }} /></td>
-                      <td style={finNum}>{fr2(r.pa)}</td><td style={{ ...finNum, color: r.tmbGap < -1 ? T.bad : T.ink }}>{fr1(r.tmbEff)} % <span style={{ fontSize: 10, color: T.faint }}>({sg(r.tmbGap)})</span></td><td style={finNum}>{fr1(r.qtes)}</td><td style={finNum}>{fr1(r.purchase)} M€</td></tr>
-                  ))}
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Total</td><td style={finNum}>{fr1(coll.offersTotal)} M€</td><td colSpan={5} /><td style={{ ...finNum, fontWeight: 800 }}>{fr1(supply.qtes)}</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(supply.purchase)} M€</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div style={{ fontSize: 11, color: T.sub, marginTop: 6, lineHeight: 1.45 }}>KFI confrontation: the partner panel plans {mp(kfi.panelPlanned)} for the Baby knitwear families, i.e. {pc(supply.coverage * 100)} of the Baby volume computed here — the KFI panel covers the Baby category only (different perimeter and unit: panel sample vs whole category), shown as coverage, never reconciled as equal. KFI status: {isValid("kfi") ? "validated by the KFI Director" : "not validated yet"} · verdict {kfi.r.globalVerdict}.</div>
-          </FinAgent>
-
-          <div style={{ marginTop: 14 }}><button onClick={() => setStep(3)} disabled={!breakdownDone} style={btn(T.accent, breakdownDone)}>{breakdownDone ? "Four validations recorded — go to the season split" : "Season split unlocks once the four agents are validated"} <ArrowRight size={14} /></button></div>
-        </div>
-      )}
-
-      {/* ---- Step 3: season split ---- */}
-      {step === 3 && (
-        <div style={cardB}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-            <Tag size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Season split — S1 2027 season budget</span>
-            {frameChip}<Chip color={breakdownDone ? T.ok : T.warn}>{breakdownDone ? "Breakdown validated" : "Breakdown not fully validated"}</Chip>
-          </div>
-          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 4, lineHeight: 1.5 }}>Perimeter: the {coll.offers.length} offers of the four categories Men, Women, Kids and Baby ({fr1(coll.ocTarget)} M€ of the {u(ref.budget)} M€ Group frame). Hierarchy: Group → market → category → offer. The rest of the Group ({fr1(coll.rest)} M€) is shown apart and not split here. Only S1 2027 is detailed; "Other seasons" is a simulated balance, not a second season entered.</div>
-
-          <FinAgent title="Collection split agent" icon={LayoutGrid} owner="CDG Collection" kpis="Budget / revenue, markdown, PVI, TMB (= TME), TMV, QTES, references" gran="Group / market / category (Men, Women, Kids, Baby) / offer" source="Validated Collection agent + demo seasonality · target source: BAK season budget" status={s.seasonColl} checks={sColl.checks}
-            calc={`S1 revenue = validated annual offer budget × demo S1 share; other seasons = the balance. S1 markdown = annual ${sg(FIN_S1_DEM)} pt, the other seasons absorb the difference so the weighted markdown stays the annual one; TMV per season from tmvModel; QTES = revenue ÷ (PVI × (1 − markdown ÷ 2)); S1 references = annual references × S1 share, carried-over references counted once in the year. Categories and the market are sums of their offers.`}
-            validateLabel="Validate as CDG Collection" onValidate={() => validate("seasonColl", "CDG Collection")} onCancel={() => cancel("seasonColl")} onReset={() => setF({ season: {} })}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Year → season → offer", "Annual (validated)", "S1 2027 (M€)", "Other seasons (M€)", "S1 share", "S1 markdown", "S1 TMV", "TMB (= TME)", "S1 QTES (M pcs)", "S1 refs", "Refs in year"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
-                <tbody>
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Group — validated frame</td><td style={finNum}>{u(ref.budget)} M€</td><td colSpan={9} style={{ ...finTd, color: T.faint }}>Four categories {fr1(coll.ocTarget)} M€ + rest of the Group {fr1(coll.rest)} M€ (not split by season)</td></tr>
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800, paddingLeft: 16 }}>Market — {FIN_CAT_PERIM}</td><td style={finNum}>{fr1(coll.ocTarget)} M€</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(sColl.market.s1)}</td><td style={finNum}>{fr1(sColl.market.other)}</td><td style={finNum}>{pc((sColl.market.s1 / (sColl.market.total || 1)) * 100)}</td><td style={finNum}>{fr1(sColl.market.demS1)} %</td><td style={finNum}>—</td><td style={finNum}>{fr1(sColl.market.tme)} %</td><td style={finNum}>{fr1(sColl.market.qtesS1)}</td><td style={finNum}>{u(sColl.market.refsS1)}</td><td style={finNum}>{u(sColl.market.refs)}</td></tr>
-                  {sColl.depts.map((d) => (
-                    <React.Fragment key={d.name}>
-                      <tr><td style={{ ...finTd, fontWeight: 800, paddingLeft: 26 }}><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 99, background: d.color, marginRight: 6 }} />Category — {d.short}</td><td style={finNum}>{fr1(d.validated)} M€</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(d.s1)}</td><td style={finNum}>{fr1(d.other)}</td><td style={{ ...finNum, color: Math.abs(d.gapPct) > FIN_TOL ? T.bad : T.ink }}>{pc((d.s1 / (d.total || 1)) * 100)}{Math.abs(d.gapPct) > FIN_TOL ? ` · ${sp(d.gapPct)}` : ""}</td><td style={finNum}>{fr1(d.demS1)} %</td><td style={finNum}>—</td><td style={finNum}>{fr1(d.tme)} %</td><td style={finNum}>{fr1(d.qtesS1)}</td><td style={finNum}>{u(d.refsS1)}</td><td style={finNum}>{u(d.refs)}</td></tr>
-                      {sColl.offers.filter((o) => o.category === d.name).map((o) => (
-                        <tr key={o.id}>
-                          <td style={{ ...finTd, paddingLeft: 40, color: T.sub }}>{o.name} <span style={{ fontFamily: MONO, fontSize: 10, color: T.faint }}>{o.id}</span></td>
-                          <td style={finNum}>{fr1(o.annual)}</td>
-                          <td style={finNum}><input type="number" step={1} value={o.s1} onChange={(e) => setIn("season", o.id, { ...(flow.season[o.id] || {}), s1: num(e) })} style={finInp} /></td>
-                          <td style={finNum}><input type="number" step={1} value={o.other} onChange={(e) => setIn("season", o.id, { ...(flow.season[o.id] || {}), other: num(e) })} style={finInp} /></td>
-                          <td style={{ ...finNum, color: Math.abs(o.gapPct) > FIN_TOL ? T.bad : T.ink }}>{pc(o.share)}{Math.abs(o.gapPct) > FIN_TOL ? ` · ${sp(o.gapPct)}` : ""}</td>
-                          <td style={finNum}>{fr1(o.demS1)} %</td><td style={finNum}>{fr1(o.tmvS1)} %</td><td style={finNum}>{fr1(o.tme)} %</td><td style={finNum}>{fr2(o.qtesS1)}</td><td style={finNum}>{u(o.refsS1)}</td><td style={finNum}>{u(o.uniqueRefs)} <span style={{ fontSize: 10, color: T.faint }}>({o.carried} carried)</span></td>
-                        </tr>
-                      ))}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </FinAgent>
-
-          <FinAgent title="Supply split agent — TMB matrix" icon={Boxes} owner="CDG Supply" kpis="QTES, carried-over quantities, purchase campaign" gran="Group / category / offer / season" source='Simulation of the "Matrice TMB" workbook (demo, no Excel or BAK read)' status={s.seasonSupply} checks={sSup.checks}
-            calc="each line = offer × season: purchases = QTES × PA (PA = PVI × (1 − TMB) × (1 + category PA drift)); sales at PVI = QTES × PVI; matrix TMB = 1 − purchases ÷ sales at PVI; carried-over quantities = QTES × carry-over share (replenished on permanent contracts); purchase campaign = new quantities × PA. Totals are confronted with the validated Supply/Collection purchase budget and with the KFI advice."
-            validateLabel="Validate as CDG Supply" onValidate={() => validate("seasonSupply", "CDG Supply")} onCancel={() => cancel("seasonSupply")} onReset={() => setF({ carry: {} })}>
-            <div style={{ overflowX: "auto", maxHeight: 360, overflowY: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Category · offer", "Season", "QTES (M pcs)", "PVI (€)", "PA (€)", "Purchases (M€)", "Sales at PVI (M€)", "Matrix TMB", "Carry-over (%)", "Carried (M pcs)", "Campaign (M€)"].map((h, j) => <th key={h} style={{ ...finTh(j > 1 ? "right" : "left"), position: "sticky", top: 0, background: T.panel2 }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {sSup.lines.map((l) => (
-                    <tr key={l.id}><td style={{ ...finTd, fontWeight: l.season === "S1 2027" ? 800 : 400 }}>{l.season === "S1 2027" ? <>{l.offer} <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 400, color: T.faint }}>{l.category}</span></> : ""}</td><td style={{ ...finTd, color: T.sub }}>{l.season}</td><td style={finNum}>{fr2(l.qtes)}</td><td style={finNum}>{fr2(l.pvi)}</td><td style={finNum}>{fr2(l.pa)}</td><td style={finNum}>{fr1(l.purchase)}</td><td style={finNum}>{fr1(l.sales)}</td><td style={{ ...finNum, color: l.tmbEff - l.tmb < -1 ? T.bad : T.ink }}>{fr1(l.tmbEff)} %</td>
-                      <td style={finNum}>{l.season === "S1 2027" ? <input type="number" step={5} value={l.carry} onChange={(e) => setIn("carry", l.id.replace(/-S1 2027$/, ""), num(e))} style={{ ...finInp, width: 58 }} /> : `${l.carry} %`}</td>
-                      <td style={finNum}>{fr2(l.carryQty)}</td><td style={finNum}>{fr1(l.campaign)}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div style={{ overflowX: "auto", marginTop: 10 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Category", "QTES year (M pcs)", "Purchases (M€)", "Supply/Collection budget", "Gap", "Matrix TMB", "S1 campaign (M€)", "Carried (M pcs)"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {sSup.colls.map((c) => <tr key={c.name}><td style={{ ...finTd, fontWeight: 800 }}>{c.short}</td><td style={finNum}>{fr1(c.qtes)}</td><td style={finNum}>{fr1(c.purchase)}</td><td style={finNum}>{fr1(c.target)}</td><td style={{ ...finNum, color: Math.abs(c.gapPct) > FIN_TOL ? T.bad : T.ok }}>{sp(c.gapPct)}</td><td style={finNum}>{fr1(c.tmbEff)} %</td><td style={finNum}>{fr1(c.campaign)}</td><td style={finNum}>{fr1(c.carryQty)}</td></tr>)}
-                  <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Total four categories</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(sSup.qtes)}</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(sSup.purchase)}</td><td style={finNum}>{fr1(supply.purchase)}</td><td colSpan={2} /><td style={{ ...finNum, fontWeight: 800 }}>{fr1(sSup.s1Campaign)}</td><td /></tr>
-                </tbody>
-              </table>
-            </div>
-          </FinAgent>
-          <div style={{ marginTop: 14 }}><button onClick={() => setStep(4)} disabled={!splitDone} style={btn(T.accent, splitDone)}>{splitDone ? "Season split validated — go to the arbitration" : "Arbitration unlocks once both split agents are validated"} <ArrowRight size={14} /></button></div>
-        </div>
-      )}
-
-      {/* ---- Step 4: submissions & arbitration (human) ---- */}
-      {step === 4 && (
-        <div style={cardB}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-            <Scale size={15} color={T.accent} /><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>Submissions & arbitration — the arbitration stays human</span>
-          </div>
-          <span style={microLbl}>Validation trail</span>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8, marginBottom: 14 }}>
-            {[["Group frame", "Financial Performance Leader", frameValid ? { state: "validated", at: frame.at } : { state: frame ? "stale" : "waiting" }], ["Country agent", "CDG Pays", s.country], ["Collection agent", "CDG Collections", s.collection], ["KFI agent", "KFI Director", s.kfi], ["Supply/Collection agent", "CDG Supply/Collections", s.supply], ["Collection split", "CDG Collection", s.seasonColl], ["Supply split", "CDG Supply", s.seasonSupply]].map(([l, who, st2]) => (
-              <div key={l} style={{ background: T.panel2, border: `1px solid ${FIN_STATE[st2.state].c}55`, borderRadius: 10, padding: "8px 11px" }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{l}</div>
-                <div style={{ fontSize: 10.5, color: T.faint }}>{who}</div>
-                <div style={{ marginTop: 5 }}><Chip color={FIN_STATE[st2.state].c}>{st2.state === "validated" ? `Validated · ${st2.at}` : FIN_STATE[st2.state].l}</Chip></div>
+            {!frameValid && <div style={{ fontSize: 11.5, color: T.warn, marginTop: 4 }}>{frame ? "The Group frame changed since its validation: validate it again on screen 1 before pushing a copy." : "Validate the Group frame on screen 1 before pushing the initial copy."}</div>}
+            {copies.length > 0 && (
+              <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+                {copies.map((c) => (
+                  <div key={c.v} style={{ fontSize: 11.5, color: c === copy ? T.ink : T.faint, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <strong style={{ fontFamily: MONO }}>V{c.v}</strong> pushed by {c.by} on {c.at} · from {c.from} · Group frame validated {c.frameAt} ({u(c.frameSnap.budget)} M€) · four categories {fr1(c.outputs.catTotal)} M€ + rest {fr1(c.outputs.rest)} M€
+                    <Chip color={c !== copy ? T.faint : copyCurrent ? T.ok : T.bad}>{c !== copy ? "superseded — history" : copyCurrent ? "current reference" : "obsolete — frame changed"}</Chip>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-          <CollapsibleSection nested title="Historical department submissions — control aid (BUDGET_COPIES)" icon={Building2} sub="older demo data set kept as an arbitration bridge; it does not validate the agents">
-            <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>The arbitration agent (analyseCopie) checks the margin chain (PVM × (1 − markdown) ↔ TMV, TMB (= TME) ↔ TMV & markdown) and the sum of the budgets within a 1 % tolerance. Its verdicts are aids: the decision stays human.</div>
-            {!flow.received ? (
-              <button onClick={() => setF({ received: true })} style={btn(T.human)}><Sparkles size={14} /> Simulate receipt of the historical submissions</button>
-            ) : (
-              <div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 10, marginBottom: 14 }}>
-                  {analyses.map(({ c, obj, a }) => {
+
+          {copy && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: `${T.human}10`, border: `1px solid ${T.human}44`, borderRadius: 11, padding: "9px 13px", marginBottom: 14 }}>
+              <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>WORKING SCENARIO</span>
+              <select aria-label="Working scenario" value={scen ? scen.id : ""} onChange={(e) => setF({ activeScen: e.target.value })} style={finSel}>{copyScens.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+              <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>COMPARE WITH</span>
+              <select aria-label="Comparison scenario" value={cmpScen ? cmpScen.id : ""} onChange={(e) => setF({ compareScen: e.target.value || null })} style={finSel}><option value="">Copy V{copy.v} only</option>{copyScens.filter((x) => !scen || x.id !== scen.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+              <span style={{ marginLeft: "auto", fontSize: 11, color: T.sub }}>{res.blocking.length ? <span style={{ color: T.bad }}>{res.blocking.length} blocking control{res.blocking.length > 1 ? "s" : ""}</span> : "No blocking control"} · {res.reserves.length} reserve{res.reserves.length > 1 ? "s" : ""} · {approvedNow ? `approved as ${lastAppr.id}` : lastAppr ? `last approval ${lastAppr.id} (copy V${lastAppr.copyV}, ${lastAppr.scenName})` : "not approved yet"}</span>
+            </div>
+          )}
+
+          {copy && scen && (
+            <>
+              {/* ---- Perimeter synthesis by controller ---- */}
+              <CollapsibleSection nested title="Perimeter synthesis by controller" icon={Users} sub="copy · proposed · retained · gap · status, with each perimeter's inputs and signature">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8, marginBottom: 6 }}>
+                  {[...FIN_PERIMS.map((p) => [p, statusOf(p.id), p.id === "country" ? `${fr1(country.total)} M€ on ${FIN_COUNTRIES.length} countries · markdown ${fr1(country.wDem)} %` : p.id === "collection" ? `${fr1(coll.offersTotal)} M€ four categories + ${fr1(coll.rest)} M€ rest · TMV ${fr1(res.k.tmv)} %` : `${kfi.sc.name} · ${kp(kfi.r.allocated)} allocated · ${fr2(kfi.r.projCost)} €/pc · ${kfi.r.globalVerdict}`]),
+                    [{ id: "supply", label: "Supply/Collection impact", owner: "dependent on Collection + KFI" }, null, `${fr1(supply.purchase)} M€ purchases · ${fr1(supply.qtes)} M pcs`]].map(([p, s2, head]) => (
+                    <div key={p.id} style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 10, padding: "8px 11px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{p.owner}</div>
+                      <div style={{ fontSize: 10.5, color: T.faint }}>{p.label}</div>
+                      <div style={{ fontSize: 11, color: T.sub, margin: "4px 0", fontFamily: MONO }}>{head}</div>
+                      {s2 ? <>{statusChip(s2)} <span style={{ fontSize: 10.5, color: T.faint }}>{counts(p.id)}</span></> : <Chip color={T.silver}>No signature — impact calculation</Chip>}
+                    </div>
+                  ))}
+                </div>
+
+                <FinAgent title="Country controllers — countries and demo stores" icon={Globe2} owner="Country controllers" kpis="Revenue, markdown rate" gran="Country / store / year" source={`Copy V${copy.v} · simulated country and store weights`} status={statusOf("country")} checks={country.checks}
+                  calc="country revenue = frame × country share; country markdown = frame markdown + country delta, editable; the revenue-weighted markdown must stay within ±0,5 pt of the frame and the shares must add up to the frame (±1 %). Stores always add up to their country."
+                  validateLabel="Sign as Country controllers" onValidate={() => validate("country", "Country controllers")} onCancel={() => cancel("country")} onReset={() => resetPerim("country")} resetLabel={`Back to copy V${copy.v}`}>
+                  <FinKpiTable v={copy.v} rows={finPerimRows("country", base, propRes("country"), res)} />
+                  <CollapsibleSection nested title="Inputs of the working scenario — countries" icon={Globe2}>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead><tr>{["Country", "Share (%)", "Revenue", "Markdown (%)", "Stores", ""].map((h, j) => <th key={h + j} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {country.rows.map((r) => (
+                            <tr key={r.code}>
+                              <td style={{ ...finTd, fontWeight: 800 }}>{r.name}</td>
+                              <td style={finNum}><input type="number" step={0.5} aria-label={`Share ${r.name}`} value={r.share} disabled={!editable} onChange={(e) => setIn("countryShares", r.code, num(e))} style={finInp} /></td>
+                              <td style={finNum}>{fr1(r.ca)} M€</td>
+                              <td style={finNum}><input type="number" step={0.5} aria-label={`Markdown ${r.name}`} value={r.dem} disabled={!editable} onChange={(e) => setIn("countryDem", r.code, num(e))} style={{ ...finInp, width: 62, borderColor: r.demEdited ? T.human : undefined }} />{r.demEdited && <div style={{ fontSize: 9.5, color: T.faint, fontFamily: MONO }}>prop. {fr1(r.demProp)} %</div>}</td>
+                              <td style={finNum}>{r.stores.length + r.other.n}</td>
+                              <td style={{ ...finTd, textAlign: "right" }}><button onClick={() => setCountryOpen(r.code)} style={{ cursor: "pointer", background: "transparent", border: "none", color: T.blue, fontSize: 11, fontWeight: 700, fontFamily: SANS }}>{countryOpen === r.code ? "stores ▾" : "stores →"}</button></td>
+                            </tr>
+                          ))}
+                          <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Total countries</td><td style={{ ...finNum, color: Math.abs(country.shareSum - 100) <= FIN_TOL ? T.ok : T.bad }}>{fr1(country.shareSum)} %</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(country.total)} M€</td><td style={finNum}>{fr1(country.wDem)} %</td><td style={finNum}>{FIN_COUNTRIES.reduce((a, c) => a + c.stores, 0)}</td><td /></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    {(() => { const c = country.rows.find((r) => r.code === countryOpen); return c && (
+                      <div style={{ marginTop: 10, background: T.panel, border: `1px solid ${T.line}`, borderRadius: 9, padding: "9px 11px" }}>
+                        <span style={microLbl}>{c.name} — demo stores (named stores are simulated; weights and trends are assumptions)</span>
+                        {c.stores.map((x) => <div key={x.name} style={{ display: "flex", gap: 8, fontSize: 11.5, padding: "3px 0", borderBottom: `1px solid ${T.lineSoft}` }}><span style={{ flex: 1, color: T.ink, fontWeight: 700 }}>{x.name}</span><span style={{ fontFamily: MONO, color: T.sub }}>{fr2(x.ca)} M€ · {fr1(x.w)} % of the country</span><Chip color={x.out ? T.warn : T.ok}>trend {sp((x.trend - 1) * 100, 0)}{x.out ? " · out of trend" : ""}</Chip></div>)}
+                        <div style={{ display: "flex", gap: 8, fontSize: 11.5, padding: "3px 0" }}><span style={{ flex: 1, color: T.sub }}>Other {c.other.n} stores</span><span style={{ fontFamily: MONO, color: T.sub }}>{fr1(c.other.ca)} M€</span></div>
+                      </div>); })()}
+                  </CollapsibleSection>
+                </FinAgent>
+
+                <FinAgent title="Collection controller — Men / Women / Kids / Baby and their offers" icon={LayoutGrid} owner="Collection controller" kpis="Revenue, PVI, markdown, TMB (= TME), TMV, contribution" gran="Category / offer / year · Group bridge" source={`Copy V${copy.v} · offer referential with explicit offer → category mapping (demo)`} status={statusOf("collection")} checks={coll.checks}
+                  calc={`${FIN_CAT_PERIM} target = frame × ${pc(coll.ocShare * 100)} (share of the four categories in the demo referential) = ${fr1(coll.ocTarget)} M€; offers are scaled and summed into their category; rates are revenue-weighted; the retained TMV is recalculated with tmvModel(TMB, markdown) — a declared TMV kept apart is shown as a control gap and blocks beyond ±1,5 pt. The rest of the Group (${fr1(coll.rest)} M€) is a bridge line, never split by category.`}
+                  validateLabel="Sign as Collection controller" onValidate={() => validate("collection", "Collection controller")} onCancel={() => cancel("collection")} onReset={() => resetPerim("collection")} resetLabel={`Back to copy V${copy.v}`}>
+                  <FinKpiTable v={copy.v} rows={finPerimRows("collection", base, propRes("collection"), res)} />
+                  <CollapsibleSection nested title="Inputs of the working scenario — offers" icon={LayoutGrid}>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead><tr>{["Category → offer", "Revenue (M€)", "PVI", "Markdown (%)", "TMB (= TME) %", "TMV recalculated", "TMV declared", "Control gap"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {res.cats.map((c) => (
+                            <React.Fragment key={c.name}>
+                              <tr style={{ background: T.panel2 }}>
+                                <td style={{ ...finTd, fontWeight: 800 }}><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 99, background: c.color, marginRight: 6 }} />Category — {c.name}</td>
+                                <td style={{ ...finNum, fontWeight: 800 }}>{fr1(c.ca)} M€</td><td style={finNum}>{fr2(c.pvm)} €</td><td style={finNum}>{fr1(c.dem)} %</td><td style={finNum}>{fr1(c.tme)} %</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(c.tmv)} %</td><td style={finNum}>{fr1(c.tmvDecl)} %</td><td style={finNum}>{sg(c.tmvDecl - c.tmv)} pt</td>
+                              </tr>
+                              {coll.offers.filter((o) => o.category === c.name).map((o) => (
+                                <tr key={o.id}>
+                                  <td style={{ ...finTd, paddingLeft: 24 }}>{o.name} <span style={{ fontFamily: MONO, fontSize: 10, color: T.faint }}>{o.id}</span></td>
+                                  <td style={finNum}><input type="number" step={1} aria-label={`Revenue ${o.name}`} value={o.budget} disabled={!editable} onChange={(e) => setIn("offerBudgets", o.id, num(e))} style={finInp} /></td>
+                                  <td style={finNum}>{fr2(o.pvm)} €</td>
+                                  <td style={finNum}><input type="number" step={0.5} aria-label={`Markdown ${o.name}`} value={o.demarque} disabled={!editable} onChange={(e) => setIn("offerDem", o.id, num(e))} style={{ ...finInp, width: 62, borderColor: o.demEdited ? T.human : undefined }} /></td>
+                                  <td style={finNum}><input type="number" step={0.5} aria-label={`TMB ${o.name}`} value={o.tme} disabled={!editable} onChange={(e) => setIn("offerTme", o.id, num(e))} style={{ ...finInp, width: 62 }} /></td>
+                                  <td style={{ ...finNum, fontWeight: 800 }}>{fr1(o.tmvExp)} %</td>
+                                  <td style={finNum}><input type="number" step={0.1} aria-label={`Declared TMV ${o.name}`} value={o.tmv} disabled={!editable} onChange={(e) => setIn("offerTmv", o.id, num(e))} style={{ ...finInp, width: 62 }} /></td>
+                                  <td style={{ ...finTd, textAlign: "right" }}><Chip color={o.chainOk ? T.ok : T.bad}>{o.chainOk ? `${sg(o.tmv - o.tmvExp)} pt` : `${sg(o.tmv - o.tmvExp)} pt — blocks`}</Chip>{!o.chainOk && editable && <button onClick={() => setIn("offerTmv", o.id, o.tmvExp)} style={{ ...finGhostBtn, marginLeft: 4, padding: "2px 7px" }}>align on recalculated</button>}</td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          ))}
+                          <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Total four categories</td><td style={{ ...finNum, fontWeight: 800, color: Math.abs(coll.ocGapPct) <= FIN_TOL ? T.ok : T.bad }}>{fr1(coll.offersTotal)} M€</td><td style={finNum}>{fr2(res.k.pvi)} €</td><td style={finNum}>{fr1(res.k.dem)} %</td><td style={finNum}>{fr1(res.k.tmb)} %</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(res.k.tmv)} %</td><td style={finNum}>{fr1(res.k.tmvDecl)} %</td><td /></tr>
+                          <tr><td style={{ ...finTd, color: T.sub }}>Other Group revenue — bridge only</td><td style={finNum}>{fr1(coll.rest)} M€</td><td colSpan={6} /></tr>
+                          <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Group consolidated (bridge)</td><td style={{ ...finNum, fontWeight: 800, color: Math.abs(coll.bridgeGapPct) <= FIN_TOL ? T.ok : T.bad }}>{fr1(coll.bridge)} M€</td><td colSpan={6} style={{ ...finTd, color: T.faint }}>vs frame {u(cref.budget)} M€ (FIN_CAT_SHARE {pc(FIN_CAT_SHARE * 100)})</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </CollapsibleSection>
+                </FinAgent>
+
+                <FinAgent title="KFI representative — feasibility on the Baby knitwear panel" icon={Factory} owner="KFI representative" kpis="Allocation, capacity, commitments, cost / PA" gran="Supplier / RELEX demand scenario (panel sample)" source={`Copy V${copy.v} · KFI partner business plans and RELEX scenarios (demo) · same engine as the KFI tab`} status={statusOf("kfi")} checks={kfi.checks}
+                  calc="allocates the RELEX scenario on the partner panel with computeKfiReconciliation; editable allocations are spread over the families in proportion to the proposal. Its reserves (commitments, capacity, off-panel, cost, coverage) never block but each one needs an explicit, justified decision in the arbitration. It produces no revenue and adds nothing to the budget."
+                  validateLabel="Sign as KFI representative" onValidate={() => validate("kfi", "KFI representative")} onCancel={() => cancel("kfi")} onReset={() => resetPerim("kfi")} resetLabel={`Back to copy V${copy.v}`}>
+                  <FinKpiTable v={copy.v} rows={finPerimRows("kfi", base, propRes("kfi"), res)} />
+                  <CollapsibleSection nested title="Inputs of the working scenario — panel allocation" icon={Factory}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                      <span style={{ fontSize: 10.5, color: T.faint, fontFamily: MONO }}>DEMAND SCENARIO</span>
+                      {KFI_FORECAST_SCENARIOS.map((x) => <button key={x.id} disabled={!editable} onClick={() => editable && setScenInputs(scen.id, (i) => ({ ...i, kfiScenario: x.id }), ["kfi"])} style={{ cursor: editable ? "pointer" : "not-allowed", background: inp.kfiScenario === x.id ? T.accent : T.panel, color: inp.kfiScenario === x.id ? "#ffffff" : T.sub, border: `1px solid ${inp.kfiScenario === x.id ? T.accent : T.line}`, borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>{x.name} · {mp(x.total)}</button>)}
+                      <span style={{ marginLeft: "auto" }}><KfiVerdict v={kfi.r.globalVerdict} /></span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead><tr>{["Supplier", "Allocated (editable)", "Plan", "Minimum", "Capacity", "Cost / PA", "Verdict"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {kfi.r.partners.map((p) => (
+                            <tr key={p.id}><td style={{ ...finTd, fontWeight: 800 }}>{p.supplier}</td>{allocCell(p.id, p.alloc, p.overload ? T.bad : null)}<td style={finNum}>{kp(p.plannedVolume)}</td><td style={{ ...finNum, color: p.shortfall ? T.warn : T.ink }}>{kp(p.minCommitment)}</td><td style={{ ...finNum, color: p.overload ? T.bad : T.ink }}>{kp(p.maxCapacity)}</td><td style={finNum}>{fr2(p.targetCost)} €</td><td style={{ ...finTd, textAlign: "right" }}><KfiVerdict v={p.verdict} /></td></tr>
+                          ))}
+                          <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Off-panel</td>{allocCell(KFI_HORS, kfi.r.horsPanel, kfi.r.horsPanel ? T.bad : null)}<td colSpan={3} style={{ ...finTd, color: T.faint }}>allocated {kp(kfi.r.allocated)} vs demand {kp(kfi.r.totalForecast)} · uncovered {kp(kfi.r.uncovered)}</td><td style={finNum}>{fr2(kfi.r.projCost)} €</td><td style={{ ...finTd, textAlign: "right" }}><KfiVerdict v={kfi.r.horsVerdict} /></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </CollapsibleSection>
+                  <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6 }}>Units: pieces of the Baby knitwear partner panel (S1 2027 families) — a sample perimeter, not the Group nor the whole Baby category. Panel purchase cost = allocated pieces × projected cost, shown at panel level only.</div>
+                </FinAgent>
+
+                <CollapsibleSection nested title="Supply/Collection impact — dependent on Collection + KFI" icon={Truck} sub="PA, PVI, TMB, volumes and purchases recalculated with computeSupplyAgent">
+                  <FinKpiTable v={copy.v} rows={finPerimRows("supply", base, null, res)} />
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>{["Category", "Revenue", "PVI (€/pc)", "TMB target", "PA drift (%) — demo assumption", "PA (€/pc)", "Effective TMB", "QTES (M pcs)", "Purchases"].map((h, j) => <th key={h} style={finTh(j ? "right" : "left")}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {supply.rows.map((r) => (
+                          <tr key={r.name}><td style={{ ...finTd, fontWeight: 800 }}>{r.short}</td><td style={finNum}>{fr1(r.ca)} M€</td><td style={finNum}>{fr2(r.pvm)}</td><td style={finNum}>{fr1(r.tme)} %</td>
+                            <td style={finNum}><input type="number" step={0.5} aria-label={`PA drift ${r.name}`} value={r.infl} disabled={!editable} onChange={(e) => setIn("supply", r.name, num(e))} style={{ ...finInp, width: 62 }} /></td>
+                            <td style={finNum}>{fr2(r.pa)}</td><td style={{ ...finNum, color: r.tmbGap < -1 ? T.bad : T.ink }}>{fr1(r.tmbEff)} % <span style={{ fontSize: 10, color: T.faint }}>({sg(r.tmbGap)})</span></td><td style={finNum}>{fr1(r.qtes)}</td><td style={finNum}>{fr1(r.purchase)} M€</td></tr>
+                        ))}
+                        <tr style={{ background: T.panel2 }}><td style={{ ...finTd, fontWeight: 800 }}>Total four categories</td><td style={finNum}>{fr1(coll.offersTotal)} M€</td><td colSpan={5} /><td style={{ ...finNum, fontWeight: 800 }}>{fr1(supply.qtes)}</td><td style={{ ...finNum, fontWeight: 800 }}>{fr1(supply.purchase)} M€</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <FinChecks checks={supply.checks} />
+                  <div style={{ fontSize: 11, color: T.sub, marginTop: 6, lineHeight: 1.45 }}>KFI link, explicit: the KFI panel plans {mp(kfi.panelPlanned)} for the Baby knitwear families, i.e. {pc(supply.coverage * 100)} of the Baby volume computed here. A cost change on the panel ({sg(res.k.kfiCost - base.k.kfiCost, 2)} €/pc vs copy V{copy.v}, i.e. {sg(res.k.panelCost - base.k.panelCost, 2)} M€ on the panel) is NOT applied mechanically to the Group or to the collection margins: the PA drift per category above is a separate, editable demo assumption. Edits here withdraw no perimeter signature but enter the arbitration key.</div>
+                </CollapsibleSection>
+              </CollapsibleSection>
+
+              {/* ---- Negotiation thread ---- */}
+              <CollapsibleSection nested title="Negotiation thread — justified KPI proposals" icon={MessageCircle} sub={`linked to copy V${copy.v} and to the working scenario · ${openItems.length} open`}>
+                <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 8, lineHeight: 1.5 }}>Each entry carries its author role, perimeter, KPI, before / after, justification and status. The Group controller accepts (the change is applied to the working scenario and every impact is recalculated), rejects (figures unchanged) or asks for a revision; the perimeter controller revises and explains. Accepting never changes the Group frame or the Monitoring baseline. {FIN_SIM_MSG}.</div>
+                {editable && !seeded && <div style={{ marginBottom: 10 }}><button onClick={seedDemo} style={finSmallBtn(T.human)}><Sparkles size={13} /> Load the demo exchanges (fictitious)</button></div>}
+                {editable && <FinNewProposal res={res} inp={inp} onSubmit={(e) => addEntry(e)} />}
+                {[...thread].reverse().map((t) => {
+                  const ts = scenById(t.scenId);
+                  const linked = copy && t.copyV === copy.v && scen && t.scenId === scen.id;
+                  const actionable = editable && linked;
+                  const lockMsg = !copy || t.copyV !== copy.v ? `Linked to copy V${t.copyV}, superseded by V${copy.v}: kept as history.` : !copyCurrent ? "The copy is obsolete (frame changed): push a new copy to continue." : `Linked to scenario “${ts ? ts.name : t.scenId}”: select it as working scenario to act.`;
+                  const view = ts && t.copyV === copy.v ? (t.status === "accepted" ? null : finChangeView(t.change, ts.inputs, cref)) : null;
+                  return <FinProposal key={t.id} t={t} view={view} actionable={actionable} lockMsg={lockMsg} scenName={ts ? ts.name : t.scenId} res={res} inp={inp} onAccept={(n) => accept(t, n)} onReject={(n) => reject(t, n)} onRevision={(n) => askRevision(t, n)} onRevise={(c, r) => revise(t, c, r)} />;
+                })}
+                {thread.length === 0 && <div style={{ fontSize: 12, color: T.faint }}>No exchange yet.</div>}
+              </CollapsibleSection>
+
+              {/* ---- Scenarios ---- */}
+              <CollapsibleSection nested title="Scenarios — simulate and compare without overwriting the copy" icon={GitBranch} sub={`${copyScens.length} scenario${copyScens.length > 1 ? "s" : ""} on copy V${copy.v}`}>
+                <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                  <input value={scenName} onChange={(e) => setScenName(e.target.value)} aria-label="New scenario name" placeholder="Scenario name" style={{ ...finSel, fontWeight: 400, width: 220 }} />
+                  <span style={{ fontSize: 11, color: T.sub }}>from</span>
+                  <select aria-label="New scenario source" value={scenSrc} onChange={(e) => setScenSrc(e.target.value)} style={finSel}><option value="copy">Copy V{copy.v}</option>{copyScens.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+                  <button onClick={() => { const s0 = copyScens.find((x) => x.id === scenSrc); createScen(scenName.trim(), s0 ? s0.inputs : copy.inputs, s0 ? `scenario “${s0.name}”` : `copy V${copy.v}`); setScenName(""); }} disabled={!scenName.trim() || !copyCurrent} style={finSmallBtn(T.accent, !!scenName.trim() && copyCurrent)}><GitBranch size={13} /> Create and work on it</button>
+                  {copyCurrent && !copyScens.some((x) => x.name.startsWith("Demo —")) && <button onClick={demoScenarios} style={finSmallBtn(T.human)}><Sparkles size={13} /> Add two demo scenarios</button>}
+                  <button onClick={resetScen} disabled={!editable} style={finGhostBtn}>Restore “{scen.name}” to its source</button>
+                </div>
+                <div style={{ display: "grid", gap: 3, marginBottom: 10 }}>
+                  {copyScens.map((x) => <div key={x.id} style={{ fontSize: 11, color: x.id === scen.id ? T.ink : T.sub }}><strong style={{ fontFamily: MONO }}>{x.id}</strong> {x.name} — from {x.from} · {x.at}{x.id === scen.id ? " · working" : ""}{cmpScen && x.id === cmpScen.id ? " · compared" : ""}</div>)}
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr>{["KPI", "Perimeter", `Copy V${copy.v}`, `Working — ${scen.name}`, "Δ vs copy", ...(cmp ? [`Compared — ${cmpScen.name}`, "Δ working − compared"] : [])].map((h, j) => <th key={h} style={finTh(j > 1 ? "right" : "left")}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {cmpRows.map(([l, per, get, fmt, unit]) => (
+                        <tr key={l}><td style={{ ...finTd, fontWeight: 700 }}>{l}</td><td style={{ ...finTd, color: T.faint, fontSize: 11 }}>{per}</td><td style={finNum}>{fmt(get(base))}</td><td style={{ ...finNum, fontWeight: 800 }}>{fmt(get(res))}</td><td style={{ ...finNum, color: T.human }}>{dCell(unit, get(base), get(res))}</td>
+                          {cmp && <><td style={finNum}>{fmt(get(cmp))}</td><td style={{ ...finNum, color: T.human }}>{dCell(unit, get(cmp), get(res))}</td></>}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ fontSize: 10.5, color: T.faint, marginTop: 6, lineHeight: 1.45 }}>{FIN_DEMO}. Every column is recomputed from the scenario inputs with computeCountryAgent, computeCollectionAgent, computeKfiAgent and computeSupplyAgent; consolidated rates are revenue-weighted; TMV is recalculated with tmvModel. Countries and collections are two readings of the same frame and are never added; KFI rows cover the Baby knitwear panel sample only. A scenario never changes the Group frame, the copy or an approved copy.</div>
+              </CollapsibleSection>
+
+              {/* ---- Submission & arbitration ---- */}
+              <CollapsibleSection nested title="Submission & arbitration — validate the copy" icon={Scale} sub="validation trail, decisions, reserves, final approval by the Group controller">
+                <span style={microLbl}>Validation trail</span>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 8, marginBottom: 12 }}>
+                  {[["Group frame", "Financial Performance Leader", frameValid ? { state: "validated", at: frame.at } : { state: frame ? "stale" : "waiting" }],
+                    [`Copy V${copy.v}`, FIN_GROUP_CDG, copyCurrent ? { state: "validated", at: copy.at } : { state: "stale" }],
+                    ...FIN_PERIMS.map((p) => [p.label, p.owner, statusOf(p.id)]),
+                    ["Final approval", FIN_GROUP_CDG, approvedNow ? { state: "validated", at: lastAppr.at } : { state: lastAppr ? "stale" : "waiting" }]].map(([l, who, st2]) => (
+                    <div key={l} style={{ background: T.panel2, border: `1px solid ${FIN_STATE[st2.state].c}55`, borderRadius: 10, padding: "8px 11px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{l}</div>
+                      <div style={{ fontSize: 10.5, color: T.faint }}>{who}</div>
+                      <div style={{ marginTop: 5 }}><Chip color={FIN_STATE[st2.state].c}>{st2.state === "validated" ? `Validated · ${st2.at}` : st2.state === "stale" && l === "Final approval" ? "Not approved on these figures" : FIN_STATE[st2.state].l}</Chip></div>
+                    </div>
+                  ))}
+                </div>
+
+                <span style={microLbl}>Category lines vs copy V{copy.v} — analyseCopie on comparable lines (arbitration aid)</span>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 8, marginBottom: 12 }}>
+                  {res.cats.map((c) => {
+                    const c0 = base.cats.find((x) => x.name === c.name);
+                    const a = analyseCopie({ budget: c.ca, demarque: c.dem, pvm: c.pvm, tme: c.tme, tmv: c.tmvDecl }, { budget: c0.ca });
                     const col = a.verdict === "Compliant" ? T.ok : a.verdict === "Gap" ? T.warn : T.bad;
-                    return (
-                      <div key={c.n} style={{ background: T.panel, border: `1px solid ${col}66`, borderRadius: 11, padding: "12px 13px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 6 }}>
-                          <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{c.n}</span>
-                          <span style={{ marginLeft: "auto" }}><Chip color={col}>{a.verdict === "Gap" ? `Gap ${a.ecart > 0 ? "+" : ""}${u(a.ecart)} M€` : a.verdict}</Chip></span>
-                        </div>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 7 }}>
-                          {IND.map((ind) => <span key={ind.k} style={{ fontFamily: MONO, fontSize: 10.5, color: c[ind.k] !== obj[ind.k] ? T.warn : T.sub, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 6, padding: "2px 7px" }}>{ind.k === "tme" ? "TMB (= TME)" : ind.label} {ind.fmt(c[ind.k])}</span>)}
-                        </div>
-                        <div style={{ fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>{a.txt}</div>
-                      </div>
-                    );
+                    return <div key={c.name} style={{ background: T.panel, border: `1px solid ${col}55`, borderRadius: 10, padding: "8px 11px" }}><div style={{ display: "flex", gap: 6, alignItems: "center" }}><strong style={{ fontSize: 12, color: T.ink }}>{c.name}</strong><span style={{ marginLeft: "auto" }}><Chip color={col}>{a.verdict}</Chip></span></div><div style={{ fontSize: 11, color: T.sub, marginTop: 4, lineHeight: 1.45 }}>{a.txt}</div></div>;
                   })}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 10 }}>
-                  <div style={{ background: T.panel, border: `1px solid ${Math.abs(gapPct) <= 1 ? T.ok : T.bad}66`, borderRadius: 11, padding: "12px 13px" }}>
-                    <span style={microLbl}>Global gap</span>
-                    <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: Math.abs(gapPct) <= 1 ? T.ok : T.bad }}>{gapGlobal > 0 ? "+" : ""}{u(gapGlobal)} M€ <span style={{ fontSize: 12 }}>({gapPct > 0 ? "+" : ""}{fr1(gapPct)} %)</span></div>
-                    <div style={{ fontSize: 11.5, color: T.sub, marginTop: 4 }}>Sum of submissions {u(sumCopies)} M€ vs budget set {u(glob.budget)} M€ — 1 % tolerance {Math.abs(gapPct) <= 1 ? "met" : "exceeded"}.</div>
+
+                <span style={microLbl}>Blocking controls (FIN_TOL ±{FIN_TOL} %, country shares, collection / Group bridge, TMB → TMV chain)</span>
+                {res.blocking.length ? <FinChecks checks={res.blocking.map((c) => ({ ...c, label: `${FIN_PERIM_OF[c.p].label}: ${c.label}` }))} /> : <div style={{ fontSize: 11.5, color: T.ok, marginBottom: 6 }}>All blocking controls pass on the working scenario.</div>}
+
+                <span style={{ ...microLbl, marginTop: 12 }}>Reserves — non-blocking, each one needs an explicit decision and a justification</span>
+                {reserves.length === 0 ? <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 6 }}>No reserve on the working scenario.</div> : reserves.map((r) => <FinReserve key={`${scen.id}|${r.id}|${keys[r.p]}`} r={r} dec={r.dec} onRecord={(d, why) => recordReserve(r, d, why)} />)}
+
+                <span style={{ ...microLbl, marginTop: 12 }}>Decisions on the proposals (copy V{copy.v}, scenario “{scen.name}”)</span>
+                {decided.length === 0 ? <div style={{ fontSize: 11.5, color: T.faint }}>No decided proposal yet.</div> : decided.map((t) => <div key={t.id} style={{ fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}><Chip color={FIN_THREAD_C[t.status]}>{t.status}</Chip> <strong style={{ color: T.ink }}>{t.id}</strong> {FIN_PERIM_OF[t.perim].owner} — {t.kpi}{t.decision ? ` · note: “${t.decision}”` : ""}</div>)}
+                {openItems.length > 0 && <div style={{ fontSize: 11.5, color: T.warn, marginTop: 4 }}>Open: {openItems.map((t) => `${t.id} (${t.status})`).join(", ")}</div>}
+
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.lineSoft}` }}>
+                  <div style={{ display: "grid", gap: 2, marginBottom: 10 }}>
+                    {reqs.map(([ok, l]) => <div key={l} style={{ display: "flex", gap: 7, fontSize: 11.5, color: ok ? T.sub : T.bad }}>{ok ? <Check size={13} color={T.ok} /> : <X size={13} color={T.bad} />}{l}</div>)}
                   </div>
-                  <div style={{ background: `${T.human}12`, border: `1px solid ${T.human}44`, borderRadius: 11, padding: "12px 13px" }}>
-                    <span style={microLbl}>Arbitration aid — to be decided by a human</span>
-                    {aReprendre.length === 0 ? <div style={{ fontSize: 12, color: T.ink }}>All submissions are compliant.</div> : aReprendre.map(({ c, a }) => (
-                      <div key={c.n} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: T.ink, lineHeight: 1.5, marginBottom: 6 }}>
-                        <ArrowRight size={13} color={T.human} style={{ flexShrink: 0, marginTop: 2 }} />
-                        <span><strong>{c.n}</strong>: {a.verdict === "Inconsistency" ? `declared TMV incompatible with its markdown and PVM (${a.dTmv > 0 ? "+" : ""}${fr1(a.dTmv)} pts) — the margin chain must be reconciled before any budget arbitration.` : `budget ${a.ecart > 0 ? "+" : ""}${u(a.ecart)} M€ off target, driving the global gap of ${fr1(gapPct)} % — bring it back within the envelope or justify it by a TMV gain.`}</span>
-                      </div>
-                    ))}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    {approvedNow ? (
+                      <><Chip color={T.ok}>Copy approved as {lastAppr.id} by the {FIN_GROUP_CDG} · {lastAppr.at}</Chip><button onClick={() => openMonitoring && openMonitoring()} style={btn(T.accent)}><TrendingUp size={14} /> Open financial monitoring ({lastAppr.id})</button></>
+                    ) : (
+                      <button onClick={approve} disabled={!canApprove} style={btn(T.ok, canApprove)}><BadgeCheck size={14} /> Validate copy & open monitoring</button>
+                    )}
+                    <span style={{ fontSize: 11, color: T.faint }}>The approved copy is immutable (version, inputs / outputs, signatures, decisions, reserves). It becomes the baseline of Financial monitoring; budget revisions there never rewrite it. Demo only: nothing is written to BAK.</span>
                   </div>
+                  {approvals.length > 0 && <div style={{ fontSize: 10.5, color: T.faint, marginTop: 8, fontFamily: MONO, lineHeight: 1.5 }}>{approvals.map((a) => <div key={a.id}>{a.id} · copy V{a.copyV} · scenario “{a.scenName}” · {a.by} · {a.at} · {a.reserves.length} reserve(s) · {a.decisions.length} decision(s){a === lastAppr ? " · Monitoring baseline" : ""}</div>)}</div>}
                 </div>
-                <KfiResetBtn onClick={() => setF({ received: false })}>Reset the submissions</KfiResetBtn>
-              </div>
-            )}
-          </CollapsibleSection>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.lineSoft}` }}>
-            {arbValid ? (
-              <><Chip color={T.ok}>Final arbitration recorded by the Financial Performance Leader · {flow.arbitration.at}</Chip><button onClick={() => setF({ arbitration: null })} style={{ cursor: "pointer", background: "transparent", color: T.faint, border: `1px solid ${T.line}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, fontWeight: 700, fontFamily: SANS }}>Cancel</button></>
-            ) : (
-              <button onClick={() => setF({ arbitration: { key: keys.arbitration, at: finNow() } })} disabled={!splitDone} style={btn(T.ok, splitDone)}><BadgeCheck size={14} /> Record the final arbitration (human decision)</button>
-            )}
-            <span style={{ fontSize: 11, color: T.faint }}>{splitDone ? (flow.arbitration && !arbValid ? "Figures changed since the last arbitration — record it again." : "Recorded in the demo only: nothing is written to BAK.") : "Needs the four agents and the two split agents validated."}</span>
-          </div>
+              </CollapsibleSection>
+            </>
+          )}
           <div style={{ marginTop: 10, fontSize: 11.5, color: T.faint }}>Monthly steering and budget revisions live in the Monitoring tab.</div>
         </div>
       )}
@@ -4993,11 +5380,11 @@ function BudgetPage({ st, fw }) {
     <div>
       <PageHeader
         title="Financial Framework"
-        desc="Kiabi's annual budget framing: the Financial Performance Leader validates the Group frame, four agents propose the breakdown for their CDG, two agents split the S1 2027 season, then the arbitration stays human. Monthly steering and budget revisions live in the Monitoring tab."
-        expert={{ role: "Performance Leader", txt: "Frames the envelopes, arbitrates the departments' submissions and orchestrates Group steering." }}
+        desc="The controllers' sandbox for Kiabi's annual budget: the Financial Performance Leader validates the Group frame, the Group controller pushes a first copy, the country, collection and KFI controllers discuss it with justified KPI proposals and simulated scenarios, then the Group controller validates the retained copy, which opens the Financial monitoring on that baseline."
+        expert={{ role: "Performance Leader", txt: "Frames the envelopes, arbitrates the controllers' proposals and orchestrates Group steering." }}
       />
-      <CollapsibleSection title="Budget module — fiscal year Sept. 2026 → Aug. 2027" icon={Wallet} sub="four steps: Group frame · breakdown (four agents) · season split · submissions & arbitration — demo data, no BAK connector">
-        <BudgetModule fw={fw} />
+      <CollapsibleSection title="Budget module — fiscal year Sept. 2026 → Aug. 2027" icon={Wallet} sub="two screens: Group frame · controller sandbox (copy, exchanges, scenarios, arbitration) — demo data, no BAK connector">
+        <BudgetModule fw={fw} openMonitoring={() => st.setTab("monitoring")} />
       </CollapsibleSection>
     </div>
   );
@@ -5228,7 +5615,14 @@ function CO2Page({ fw }) {
    Monitoring — single annual follow-up for the financial and CO₂ frameworks
    (former step 4 of BudgetModule and CO2Module, fed by the shared framing state)
    ============================================================ */
-function FinancialMonitoring({ glob, depts, scope, fw }) {
+/* Provenance of the financial baseline, shown above the Financial monitoring (approved copy or live Framework figures) */
+const FinBaselineBanner = ({ prov }) => (
+  <div data-baseline style={{ display: "flex", gap: 8, alignItems: "flex-start", background: prov.warn ? `${T.warn}14` : `${T.accent}0d`, border: `1px solid ${prov.warn ? T.warn : T.accent}44`, borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: 11.5, color: T.ink, lineHeight: 1.5 }}>
+    <BadgeCheck size={14} color={prov.warn ? T.warn : T.accent} style={{ flexShrink: 0, marginTop: 2 }} />
+    <span>{prov.detail}{prov.warn && <span style={{ display: "block", color: T.warn, fontWeight: 700, marginTop: 3 }}>{prov.warn}</span>}</span>
+  </div>
+);
+function FinancialMonitoring({ glob, depts, scope, fw, prov }) {
   const [month, setMonth] = useState(0);
   const [revLine, setRevLine] = useState(null);
   const scopeKey = scope ? scope.label : "Group";
@@ -5289,10 +5683,10 @@ function FinancialMonitoring({ glob, depts, scope, fw }) {
   return (
     <CollapsibleSection title={`Financial monitoring — ${scope ? scope.label : "monitoring agent"}`} icon={TrendingUp}
       right={<>
-        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(glob.budget)} M€ · {depts.length} {scope ? scope.lines : "departments"} from the {scope ? scope.source : "Financial Framework"}</span>
+        <span style={{ fontSize: 11, color: T.faint, fontFamily: MONO }}>budget {u(glob.budget)} M€ · {depts.length} {scope ? scope.lines : prov && prov.lines ? prov.lines : "departments"} from the {scope ? scope.source : prov && prov.source ? prov.source : "Financial Framework"}</span>
         <ResetBtn onClick={() => setMonth(0)} />
       </>}>
-      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actuals by {scope ? scope.line.toLowerCase() : "department"} vs phased budget trajectory (Christmas peaks, January and July sales, back-to-school). Green ≤ 2 pts · orange 2 – 4 pts · red &gt; 4 pts.</div>
+      <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Simulated actuals by {scope ? scope.line.toLowerCase() : prov && prov.line ? prov.line.toLowerCase() : "department"} vs phased budget trajectory (Christmas peaks, January and July sales, back-to-school). Green ≤ 2 pts · orange 2 – 4 pts · red &gt; 4 pts.</div>
       <div style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px", marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <span style={{ fontSize: 11, fontFamily: MONO, color: T.faint, textTransform: "uppercase" }}>Month</span>
@@ -5336,7 +5730,7 @@ function FinancialMonitoring({ glob, depts, scope, fw }) {
       </div>
       <div style={{ overflowX: "auto", marginBottom: 14 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead><tr>{[scope ? scope.line : "Department", "Status", "Cumulative revenue actual / phased", "Markdown actual / phased", "TMV actual / phased", "Max deviation", "Revision"].map((c, j) => <th key={c} style={{ textAlign: j === 0 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
+          <thead><tr>{[scope ? scope.line : prov && prov.line ? prov.line : "Department", "Status", "Cumulative revenue actual / phased", "Markdown actual / phased", "TMV actual / phased", "Max deviation", "Revision"].map((c, j) => <th key={c} style={{ textAlign: j === 0 ? "left" : "right", padding: "6px 8px", fontSize: 9.5, fontFamily: MONO, textTransform: "uppercase", letterSpacing: 0.5, color: T.faint, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap" }}>{c}</th>)}</tr></thead>
           <tbody>
             {mon.map((x) => (
               <tr key={x.d.n}>
@@ -5945,10 +6339,39 @@ const OFFER_MONITORING = {
 };
 const BUDGET_COLLECTIONS = [...new Set(BUDGET_OFFERS.map((o) => o.collection))];
 const offerLines = (offers) => offers.map((o) => { const m = OFFER_MONITORING[o.id] || { volume: 1, intensite: 1.4 }; return { n: o.name, collection: o.collection, budget: o.budget, demarque: o.demarque, pvm: o.pvm, tme: o.tme, tmv: o.tmv, volume: m.volume, intensite: m.intensite, co2Budget: Math.round(m.volume * m.intensite * 1000), caFac: m.caFac, demGap: m.demGap, co2Fac: m.co2Fac, cause: m.cause }; });
+/* ---- Financial monitoring baseline: the latest copy approved in the controller sandbox (never a draft scenario) ----
+   Before any approval the monitoring keeps the live Financial Framework figures and says so. */
+const FIN_CAT_ACTUALS = { /* demo actuals per category: index on the phased revenue, markdown gap in points (simulated) */
+  Men: { caFac: () => 0.985, demGap: () => 0.8 },
+  Women: { caFac: (m) => (m >= 4 ? 1.02 : 1.005), demGap: () => -0.3 },
+  Kids: { caFac: () => 0.975, demGap: () => 1.8 },
+  Baby: { caFac: () => 1.008, demGap: () => 0.6 },
+};
+const FIN_LIVE_PROV = { detail: "Source: live Financial Framework figures (Group budget and budget by department). No copy has been approved in the controller sandbox yet: once the Group controller validates a copy, it becomes this baseline." };
+const finLatestApproval = (fw) => { const a = (fw.budgetFlow && fw.budgetFlow.approvals) || []; return a[a.length - 1] || null; };
+const finApprovalCurrent = (fw, appr) => { const fr = fw.budgetFlow.frame; return !!fr && IND.every((i) => fr.snap[i.k] === fw.budgetGlob[i.k]) && finKey([fr.at, fr.snap]) === appr.fk; };
+/* Group lines of the approved copy: either the four categories + the bridge line, or the countries — two readings of the same frame, never added */
+function finApprovedLines(appr, axis) {
+  const f = appr.frameSnap, o = appr.outputs;
+  if (axis === "country") return o.countries.map((c) => { const tr = FIN_COUNTRY_TREND[c.code] ?? 1; return { n: c.name, budget: c.ca, demarque: c.dem, pvm: f.pvm, tme: f.tme, tmv: tmvModel(f.tme, c.dem), caFac: () => tr, demGap: () => +((1 - tr) * 20).toFixed(1) }; });
+  return [
+    ...o.categories.map((c) => ({ n: `${c.name} category`, collection: `${c.name} category`, budget: c.ca, demarque: +c.dem.toFixed(1), pvm: c.pvm, tme: +c.tme.toFixed(1), tmv: c.tmv, ...FIN_CAT_ACTUALS[c.name] })),
+    { n: "Other Group revenue (bridge)", budget: o.rest, demarque: f.demarque, pvm: f.pvm, tme: f.tme, tmv: tmvModel(f.tme, f.demarque), caFac: () => 1, demGap: () => 0 },
+  ];
+}
+const finApprovedProv = (fw, appr, extra) => ({
+  detail: `Baseline = approved copy ${appr.id}: copy V${appr.copyV} (pushed ${appr.copyAt}), scenario “${appr.scenName}”, approved by the ${appr.by} on ${appr.at} · Group frame validated ${appr.frameAt}: ${u(appr.frameSnap.budget)} M€, markdown ${fr1(appr.frameSnap.demarque)} %, TMB (= TME) ${fr1(appr.frameSnap.tme)} %, TMV ${fr1(appr.frameSnap.tmv)} %. ${extra} Draft scenarios never change this baseline; validated revisions stay separate versions and never rewrite it.`,
+  warn: finApprovalCurrent(fw, appr) ? null : "The Group frame changed since this approval: the approved baseline is to be revised (validate the frame, push and approve a new copy). It is kept unchanged until then.",
+});
 function monitoringScope(kind, collection, fw) {
   if (kind !== "market" && kind !== "collection") return null;
   const offers = kind === "market" ? BUDGET_OFFERS : BUDGET_OFFERS.filter((o) => o.collection === collection);
   const lines = offerLines(offers);
+  /* financial lines: the same offers, with their values from the approved copy when there is one (CO₂ lines stay unchanged) */
+  const appr = finLatestApproval(fw);
+  const finLines = appr ? lines.map((l, i) => { const a = appr.outputs.offers.find((x) => x.id === offers[i].id); return a ? { ...l, budget: a.budget, demarque: a.demarque, pvm: a.pvm, tme: a.tme, tmv: a.tmv } : l; }) : lines;
+  const finBudget = finLines.reduce((s, l) => s + l.budget, 0) || 1;
+  const fw2 = (k) => finLines.reduce((s, l) => s + l[k] * l.budget, 0) / finBudget;
   const budget = lines.reduce((s, l) => s + l.budget, 0) || 1;
   const w = (k) => lines.reduce((s, l) => s + l[k] * l.budget, 0) / budget;
   const co2 = lines.reduce((s, l) => s + l.co2Budget, 0);
@@ -5956,15 +6379,17 @@ function monitoringScope(kind, collection, fw) {
   const deptLine = fw.budgetDepts.find((d) => d.n === BUDGET_OFFERS_DEPT);
   const co2Line = fw.co2Depts.find((d) => d.n === BUDGET_OFFERS_DEPT);
   /* the market is steered against its Financial / CO₂ Framework line (live); a collection against the sum of its offers */
-  const finGlob = kind === "market" && deptLine ? deptLine : { budget, demarque: +w("demarque").toFixed(1), pvm: +w("pvm").toFixed(2), tme: +w("tme").toFixed(1), tmv: +w("tmv").toFixed(1) };
+  const finGlob = appr ? { budget: finBudget, demarque: +fw2("demarque").toFixed(1), pvm: +fw2("pvm").toFixed(2), tme: +fw2("tme").toFixed(1), tmv: +fw2("tmv").toFixed(1) }
+    : kind === "market" && deptLine ? deptLine : { budget, demarque: +w("demarque").toFixed(1), pvm: +w("pvm").toFixed(2), tme: +w("tme").toFixed(1), tmv: +w("tmv").toFixed(1) };
   const co2Glob = kind === "market" && co2Line ? co2Line : { budget: co2, intensite: +(co2 / vol / 1000).toFixed(2), volume: vol };
   return {
     kind, offers, collections: [...new Set(offers.map((o) => o.collection))],
     label: kind === "market" ? `${BUDGET_OFFERS_DEPT} market` : `${collection} collection`,
     line: "Offer", lines: "offers",
-    source: kind === "market" ? "Financial Framework (Offers & Collections line)" : "Financial Framework (offer breakdown)",
+    source: appr ? `approved copy ${appr.id} (offers)` : kind === "market" ? "Financial Framework (Offers & Collections line)" : "Financial Framework (offer breakdown)",
+    prov: appr ? finApprovedProv(fw, appr, `The ${offers.length} offers of this ${kind} take their approved revenue, markdown, PVI, TMB and recalculated TMV; the ${kind} target is their sum (no country × offer split exists in the data).`) : { detail: `Source: live ${kind === "market" ? "Financial Framework Offers & Collections line" : "offer breakdown"} — no copy approved in the controller sandbox yet.` },
     co2Source: kind === "market" ? "CO₂ Framework (Offers & Collections line)" : "offer volumes × intensities",
-    fin: { glob: finGlob, depts: lines },
+    fin: { glob: finGlob, depts: finLines },
     co2: { glob: co2Glob, depts: lines.map((l) => ({ n: l.n, collection: l.collection, budget: l.co2Budget, intensite: l.intensite, volume: l.volume, co2Fac: l.co2Fac, cause: l.cause })) },
   };
 }
@@ -5978,7 +6403,11 @@ function MonitoringPage({ fw, views = ["financial", "co2"], initial, scope = "gr
   const [view, setView] = useState(initial && views.includes(initial) ? initial : allowed[0].id);
   const [collection, setCollection] = useState(BUDGET_COLLECTIONS[0]);
   const current = allowed.some((v) => v.id === view) ? view : allowed[0].id;
-  const sc = useMemo(() => monitoringScope(scope, collection, fw), [scope, collection, fw.budgetDepts, fw.co2Depts]);
+  const sc = useMemo(() => monitoringScope(scope, collection, fw), [scope, collection, fw.budgetDepts, fw.co2Depts, fw.budgetFlow, fw.budgetGlob]);
+  /* Group financial baseline: the latest approved copy of the controller sandbox (lines: four categories + bridge, or countries) */
+  const [axis, setAxis] = useState("category");
+  const appr = finLatestApproval(fw);
+  const grp = useMemo(() => (appr ? { glob: { ...appr.frameSnap }, depts: finApprovedLines(appr, axis), prov: { ...finApprovedProv(fw, appr, axis === "country" ? "Lines = countries; they add up to the frame (country PVI and TMB = frame values, demo)." : "Lines = four categories + other Group revenue (bridge); they add up to the frame."), line: axis === "country" ? "Country" : "Category / bridge", lines: axis === "country" ? "countries" : "lines", source: `approved copy ${appr.id}` } } : null), [appr, axis, fw.budgetFlow, fw.budgetGlob]);
   const HEADERS = {
     group: { desc: "Single annual follow-up of the fiscal year: financial and CO₂ trajectories month by month, fed live by the Financial Framework and CO₂ Framework, plus the store submissions confrontation.", expert: { role: "Performance Leader", txt: "Monitors actuals against the phased frameworks, raises alerts and projects the year-end for the Group." } },
     market: { desc: "Market follow-up of the fiscal year: revenue, markdown, TMV and CO₂ trajectories of the Offers & Collections market, offer by offer, plus the store submissions of every country.", expert: { role: "Market Manager", txt: "Steers the market's offers against the Offers & Collections line of the Financial and CO₂ Frameworks — never the Group figures." } },
@@ -6012,7 +6441,15 @@ function MonitoringPage({ fw, views = ["financial", "co2"], initial, scope = "gr
           })}
         </div>
       )}
-      {current === "financial" && <FinancialMonitoring key={sc ? sc.label : "group"} glob={sc ? sc.fin.glob : fw.budgetGlob} depts={sc ? sc.fin.depts : fw.budgetDepts} scope={sc} fw={fw} />}
+      {current === "financial" && <FinBaselineBanner prov={sc ? sc.prov : grp ? grp.prov : FIN_LIVE_PROV} />}
+      {current === "financial" && !sc && grp && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          <span style={{ fontSize: 10.5, fontFamily: MONO, color: T.faint }}>LINES OF THE APPROVED COPY {appr.id}</span>
+          {[["category", "Four categories + bridge"], ["country", "Countries"]].map(([id, l]) => <button key={id} onClick={() => setAxis(id)} style={{ cursor: "pointer", background: axis === id ? T.accent : T.panel, color: axis === id ? "#ffffff" : T.sub, border: `1px solid ${axis === id ? T.accent : T.line}`, borderRadius: 999, padding: "5px 12px", fontSize: 11.5, fontWeight: 700, fontFamily: SANS }}>{l}</button>)}
+          <span style={{ fontSize: 10.5, color: T.faint }}>two readings of the same frame — never added</span>
+        </div>
+      )}
+      {current === "financial" && <FinancialMonitoring key={sc ? `${sc.label}-${sc.source}` : grp ? `group-${appr.id}` : "group"} glob={sc ? sc.fin.glob : grp ? grp.glob : fw.budgetGlob} depts={sc ? sc.fin.depts : grp ? grp.depts : fw.budgetDepts} scope={sc} fw={fw} prov={sc ? sc.prov : grp ? grp.prov : FIN_LIVE_PROV} />}
       {current === "co2" && <CO2Monitoring key={sc ? sc.label : "group"} glob={sc ? sc.co2.glob : fw.co2Glob} depts={sc ? sc.co2.depts : fw.co2Depts} scope={sc} />}
       {current === "store" && <StoreSubmissionsBlock showMonthly title="Store submissions monitoring" offers={sc ? sc.offers : FIN_CAT_OFFERS} scopeLabel={sc ? sc.label : null} />}
     </div>
@@ -6081,7 +6518,8 @@ export default function App() {
   const [co2Glob, setCo2Glob] = useState({ ...CO2_GLOBAL });
   const [co2Depts, setCo2Depts] = useState(CO2_DEPTS.map((d) => ({ ...d })));
   /* Budget process (Financial Framework) and budget revisions (Monitoring) — demo state, never written to BAK */
-  const [budgetFlow, setBudgetFlow] = useState(() => ({ frame: null, horizon: "fy27", countryShares: Object.fromEntries(FIN_COUNTRIES.map((c) => [c.code, c.share])), countryDem: {}, offerBudgets: {}, offerTme: {}, offerDem: {}, kfiScenario: "base", kfiAlloc: {}, supply: {}, season: {}, carry: {}, valid: {}, received: false, arbitration: null, horizonEdits: {} }));
+  /* Financial Framework sandbox: Group frame, copy versions, scenarios (with their inputs), negotiation thread, signatures, reserve decisions, approved copies */
+  const [budgetFlow, setBudgetFlow] = useState(() => ({ frame: null, horizon: "fy27", horizonEdits: {}, copies: [], scenarios: [], scenSeq: 0, activeScen: null, compareScen: null, thread: [], threadSeq: 0, valid: {}, decisions: {}, approvals: [] }));
   const [revisions, setRevisions] = useState([]);
   /* Market brief (written in Market Framework, read-only elsewhere), product sheet progress, approval snapshots */
   const [marketBrief, setMarketBrief] = useState(null);
